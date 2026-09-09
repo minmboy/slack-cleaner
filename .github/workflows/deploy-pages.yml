@@ -1,0 +1,60 @@
+# Deploys the built site to GitHub Pages.
+#
+# Enable it once in the repository settings: Settings → Pages → Source →
+# "GitHub Actions". Until then this workflow is inert.
+#
+# Note that GitHub Pages cannot set response headers, so the Content-Security-Policy
+# arrives only as the `<meta http-equiv>` tag that the build injects. That does
+# enforce `connect-src`, which is the directive that matters here. See README.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; a queued run replaces an older pending one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run build
+        env:
+          # A project site is served from /<repo>/, not the domain root.
+          BASE_PATH: /${{ github.event.repository.name }}/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
