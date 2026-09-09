@@ -46,25 +46,38 @@ export function RunView({
   const retryable = problems.filter((result) => result.outcome === 'failed').length
 
   function exportLog() {
+    // Quote every cell: channel labels are display names and error codes can be
+    // transport messages, either of which may contain a comma or a quote.
+    const cell = (value: string) => `"${value.replace(/"/g, '""')}"`
     const rows = [
-      'channel_id,channel_label,ts,outcome,error_code',
+      ['channel_id', 'channel_label', 'ts', 'outcome', 'error_code'].map(cell).join(','),
       ...results.map((result) =>
         [
           result.channelId,
-          `"${(labels.get(result.channelId) ?? '').replace(/"/g, '""')}"`,
+          labels.get(result.channelId) ?? '',
           result.ts,
           result.outcome,
           result.errorCode ?? '',
-        ].join(','),
+        ]
+          .map(cell)
+          .join(','),
       ),
     ]
-    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' })
+    // The BOM keeps Excel from mangling non-ASCII names in the label column.
+    const blob = new Blob([`\ufeff${rows.join('\r\n')}`], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
     anchor.download = `slack-cleanup-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}.csv`
+    anchor.style.display = 'none'
+    // A detached anchor plus a same-task revoke can leave the browser with
+    // nothing to fetch, so attach first and release on the next turn.
+    document.body.appendChild(anchor)
     anchor.click()
-    URL.revokeObjectURL(url)
+    setTimeout(() => {
+      anchor.remove()
+      URL.revokeObjectURL(url)
+    }, 0)
   }
 
   const title = running

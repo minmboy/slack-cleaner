@@ -51,7 +51,12 @@ function toTarget(raw: RawMessage, channelId: string, isThreadParent: boolean): 
 
 export interface ScanOptions {
   myUserId: string
-  /** Unix seconds; only messages after this are fetched. Saves API calls on long histories. */
+  /**
+   * Unix seconds; only messages after this are fetched. Saves API calls on long
+   * histories, at a cost the UI states: `conversations.history` filters by root
+   * timestamp, so a thread that started before the cutoff never surfaces and the
+   * user's later replies inside it are not found.
+   */
   oldest?: number
   latest?: number
   onProgress: (progress: ScanProgress) => void
@@ -90,6 +95,8 @@ export async function scanConversations(
     const threadRoots: string[] = []
     /** ts values already staged, so a root seen in both walks is not double-counted. */
     const seen = new Set<string>()
+    /** Consecutive history pages that came back at the throttled cap. */
+    let cappedPageRun = 0
 
     try {
       const historyPages = slackPaginate<RawMessage>(
@@ -101,9 +108,12 @@ export async function scanConversations(
       )
 
       for await (const page of historyPages) {
-        // A full-size request answered with exactly 15 items is the signature of
-        // the stricter limits Slack applies to distributed non-Marketplace apps.
-        if (!throttleReported && page.length === 15 && PAGE_SIZE > 15) {
+        // One 15-message page just means a short conversation. Two in a row means
+        // Slack is capping the page size, which is the signature of the stricter
+        // limits it applies to distributed non-Marketplace apps.
+        if (page.length === 15 && PAGE_SIZE > 15) cappedPageRun++
+        else cappedPageRun = 0
+        if (!throttleReported && cappedPageRun >= 2) {
           throttleReported = true
           options.onThrottleSuspected?.()
         }

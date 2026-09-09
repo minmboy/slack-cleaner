@@ -71,10 +71,15 @@ export default function App() {
 
   const rateLimitRemaining = Math.max(0, Math.ceil((rateLimitUntil - nowTick) / 1000))
 
-  // Drive the rate-limit countdown only while one is pending.
+  // Drive the rate-limit countdown only while one is pending. The deadline passing
+  // does not change any dependency, so the tick has to stop itself.
   useEffect(() => {
     if (rateLimitUntil <= Date.now()) return
-    const timer = setInterval(() => setNowTick(Date.now()), 500)
+    const timer = setInterval(() => {
+      const now = Date.now()
+      setNowTick(now)
+      if (now >= rateLimitUntil) clearInterval(timer)
+    }, 500)
     return () => clearInterval(timer)
   }, [rateLimitUntil])
 
@@ -109,8 +114,10 @@ export default function App() {
       setStep('select')
       if (remember) sessionStorage.setItem(TOKEN_KEY, candidate)
     } catch (error) {
-      sessionStorage.removeItem(TOKEN_KEY)
       if (error instanceof SlackApiError) {
+        // A transport failure says nothing about the token, so keep it; only drop
+        // it when Slack itself refuses it.
+        sessionStorage.removeItem(TOKEN_KEY)
         setConnectError(
           error.code === 'invalid_auth' || error.code === 'not_authed'
             ? t.app.errInvalidToken
@@ -165,13 +172,16 @@ export default function App() {
     setConversationsLoading(true)
     setListError(null)
     setConversations([])
-    setSelected(new Set())
 
     void (async () => {
       const ctx = makeCtx(controller.signal)
       try {
         const list = await listConversations(kinds, ctx)
         setConversations(list)
+        // Adding a type should not discard rows already picked, but a row that is
+        // no longer listed cannot stay selected either.
+        const ids = new Set(list.map((item) => item.id))
+        setSelected((prev) => new Set([...prev].filter((id) => ids.has(id))))
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return
         setListError(
@@ -182,7 +192,8 @@ export default function App() {
             : t.app.errListUnreachable,
         )
       } finally {
-        setConversationsLoading(false)
+        // A superseded fetch must not flip the flag; its replacement is still running.
+        if (!controller.signal.aborted) setConversationsLoading(false)
       }
     })()
 
@@ -321,18 +332,23 @@ export default function App() {
     const counts = new Map<string, number>()
     for (const target of staged) counts.set(target.channelId, (counts.get(target.channelId) ?? 0) + 1)
     return [...counts.entries()]
-      .map(([channelId, count]) => ({ label: labels.get(channelId) ?? channelId, count }))
+      .map(([channelId, count]) => ({ channelId, label: labels.get(channelId) ?? channelId, count }))
       .sort((a, b) => b.count - a.count)
   }, [staged, labels])
 
+  /**
+   * `keepPrior` carries results forward across a retry. Deletion is irreversible,
+   * so the record of what already went is part of the output — clearing it would
+   * drop those rows from the tally, the failure table and the CSV audit log.
+   */
   const startDelete = useCallback(
-    async (queue: TargetMessage[]) => {
+    async (queue: TargetMessage[], keepPrior: DeleteResult[] = []) => {
       const controller = new AbortController()
       abortRef.current = controller
       setConfirmOpen(false)
       setStep('run')
-      setResults([])
-      setRunTotal(queue.length)
+      setResults(keepPrior)
+      setRunTotal(keepPrior.length + queue.length)
       setRunning(true)
       setAborted(null)
 
@@ -358,11 +374,12 @@ export default function App() {
   )
 
   const retryFailed = useCallback(() => {
-    const failedKeys = new Set(
-      results.filter((result) => result.outcome === 'failed').map(keyOf),
-    )
+    const failedKeys = new Set(results.filter((result) => result.outcome === 'failed').map(keyOf))
     const queue = targets.filter((target) => failedKeys.has(keyOf(target)))
-    if (queue.length > 0) void startDelete(queue)
+    // Everything except the rows being retried survives, so the run total and the
+    // audit log still describe the whole operation.
+    const keepPrior = results.filter((result) => result.outcome !== 'failed')
+    if (queue.length > 0) void startDelete(queue, keepPrior)
   }, [results, targets, startDelete])
 
   const remaining = useMemo(() => {

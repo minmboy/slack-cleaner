@@ -80,7 +80,14 @@ export function ReviewView({ targets, labels, excluded, onExcludedChange, onBack
     onExcludedChange(next)
   }
 
-  const filterActive = filtered.length !== targets.length
+  // Derived from the inputs, not from the result count: a filter that happens to
+  // match everything is still active, and the reset button has to stay reachable.
+  const filterActive =
+    filters.text.trim() !== '' ||
+    filters.from !== '' ||
+    filters.to !== '' ||
+    filters.onlyThreads ||
+    filters.onlyFiles
 
   return (
     <>

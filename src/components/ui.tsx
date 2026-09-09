@@ -4,17 +4,27 @@ import { useI18n } from '../i18n/context'
 export function CopyBlock({ code }: { code: string }) {
   const { t } = useI18n()
   const [copied, setCopied] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  // `navigator.clipboard` is undefined outside a secure context, and writeText
+  // can be denied even inside one. Either way the <pre> is still selectable.
   const copy = useCallback(() => {
-    void navigator.clipboard.writeText(code).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1600)
-    })
+    void (async () => {
+      try {
+        await navigator.clipboard?.writeText(code)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1600)
+      } catch {
+        setFailed(true)
+        setTimeout(() => setFailed(false), 2400)
+      }
+    })()
   }, [code])
 
   return (
     <div className="code-block">
       <button type="button" className="btn ghost sm copy" onClick={copy}>
-        {copied ? t.ui.copied : t.ui.copy}
+        {failed ? t.ui.copyFailed : copied ? t.ui.copied : t.ui.copy}
       </button>
       <pre>{code}</pre>
     </div>

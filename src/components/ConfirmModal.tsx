@@ -3,7 +3,7 @@ import { useI18n } from '../i18n/context'
 
 interface Props {
   total: number
-  perChannel: { label: string; count: number }[]
+  perChannel: { channelId: string; label: string; count: number }[]
   dryRun: boolean
   onDryRunChange: (value: boolean) => void
   onCancel: () => void
@@ -29,7 +29,7 @@ export function ConfirmModal({ total, perChannel, dryRun, onDryRunChange, onCanc
             <table className="fail-table">
               <tbody>
                 {perChannel.map((item) => (
-                  <tr key={item.label}>
+                  <tr key={item.channelId}>
                     <td>{item.label}</td>
                     <td style={{ textAlign: 'right', color: 'var(--accent)' }}>{n(item.count)}</td>
                   </tr>

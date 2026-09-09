@@ -142,6 +142,9 @@ curl -sD - -o /dev/null <deployed URL> | grep -i content-security-policy   # the
 - This is the same action as deleting in the Slack UI. Records **may survive in your company's export,
   Discovery, or retention backups.**
 - **Attached files are not deleted.** That needs `files.delete` and the `files:write` scope.
+- Setting a scan start date filters `conversations.history` by *root* timestamp, so replies you wrote
+  inside a thread that started before the cutoff are not found. Leave the date empty for a complete
+  sweep.
 - You cannot delete anyone else's messages. Deleting your own thread root leaves other people's
   replies in place.
 

@@ -51,6 +51,7 @@ export const en: Strings = {
   ui: {
     copy: 'Copy',
     copied: 'Copied',
+    copyFailed: 'Copy failed',
   },
 
   kind: {
@@ -176,7 +177,8 @@ settings:
     kindsLabel: 'Types',
     scopeTip: (scopes: string) => `Requires scopes: ${scopes}`,
     rangeLabel: 'Scan from',
-    rangeHint: 'Only fetches messages after this date. Leave empty for everything — long histories take proportionally longer.',
+    rangeHint:
+      'Only fetches messages after this date. Leave empty for everything — long histories take proportionally longer. With a date set, replies inside threads that started before it are not found.',
     nonDmWarning: (code: ReactNode): ReactNode => (
       <>
         You included conversations beyond DMs. If the manifest is missing the matching scope, only those conversations

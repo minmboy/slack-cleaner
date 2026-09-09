@@ -57,6 +57,7 @@ export const ko = {
   ui: {
     copy: '복사',
     copied: '복사됨',
+    copyFailed: '복사 실패',
   },
 
   kind: {
@@ -181,7 +182,8 @@ settings:
     kindsLabel: '대화 종류',
     scopeTip: (scopes: string) => `필요 스코프: ${scopes}`,
     rangeLabel: '스캔 범위',
-    rangeHint: '이후 메시지만 조회합니다. 비워 두면 전체 — 오래된 대화는 그만큼 시간이 걸립니다.',
+    rangeHint:
+      '이후 메시지만 조회합니다. 비워 두면 전체 — 오래된 대화는 그만큼 시간이 걸립니다. 날짜를 지정하면 그 이전에 시작된 스레드 안의 답글은 찾지 못합니다.',
     nonDmWarning: (code: ReactNode): ReactNode => (
       <>
         DM 외의 대화를 포함했습니다. 해당 스코프가 매니페스트에 없으면 그 대화만 {code}로 건너뛰고, 나머지는 정상
