@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { authRevoke, authTest, fetchUser, listConversations, streamUsers } from './lib/api'
-import { runDeletion, DeleteRunAborted } from './lib/deleter'
+import { collectFiles, runDeletion, DeleteRunAborted } from './lib/deleter'
 import { scanConversations } from './lib/scan'
 import { SlackApiError, type CallContext } from './lib/slack'
 import type {
@@ -10,6 +10,7 @@ import type {
   Identity,
   ScanProgress,
   SlackUser,
+  TargetFile,
   TargetMessage,
 } from './lib/types'
 import { ConfirmModal } from './components/ConfirmModal'
@@ -19,7 +20,7 @@ import { RunView } from './components/RunView'
 import { ScanView } from './components/ScanView'
 import { TokenGate } from './components/TokenGate'
 import { LANGS, useI18n } from './i18n/context'
-import { keyOf } from './lib/format'
+import { keyOf, resultKey } from './lib/format'
 
 type Step = 'connect' | 'select' | 'scan' | 'review' | 'run'
 
@@ -58,6 +59,7 @@ export default function App() {
 
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [dryRun, setDryRun] = useState(false)
+  const [deleteFiles, setDeleteFiles] = useState(false)
   const [runTotal, setRunTotal] = useState(0)
   const [results, setResults] = useState<DeleteResult[]>([])
   const [running, setRunning] = useState(false)
@@ -328,7 +330,12 @@ export default function App() {
 
   const staged = useMemo(() => targets.filter((target) => !excluded.has(keyOf(target))), [targets, excluded])
 
-  /** Messages whose deletion leaves a file behind; surfaced on the confirm screen. */
+  /**
+   * Files I uploaded on the staged messages, one entry per file id. Deleting one
+   * removes it from every conversation it was shared into, so this is opt-in.
+   */
+  const stagedFiles = useMemo(() => collectFiles(staged), [staged])
+  /** Messages carrying an attachment of any kind, mine or not — the honesty counter. */
   const stagedWithFiles = useMemo(() => staged.filter((target) => target.hasFiles).length, [staged])
 
   const perChannel = useMemo(() => {
@@ -345,13 +352,13 @@ export default function App() {
    * drop those rows from the tally, the failure table and the CSV audit log.
    */
   const startDelete = useCallback(
-    async (queue: TargetMessage[], keepPrior: DeleteResult[] = []) => {
+    async (queue: TargetMessage[], files: TargetFile[], keepPrior: DeleteResult[] = []) => {
       const controller = new AbortController()
       abortRef.current = controller
       setConfirmOpen(false)
       setStep('run')
       setResults(keepPrior)
-      setRunTotal(keepPrior.length + queue.length)
+      setRunTotal(keepPrior.length + queue.length + files.length)
       setRunning(true)
       setAborted(null)
 
@@ -360,6 +367,7 @@ export default function App() {
           queue,
           {
             dryRun,
+            files,
             onResult: (result) => setResults((prev) => [...prev, result]),
           },
           makeCtx(controller.signal),
@@ -377,16 +385,20 @@ export default function App() {
   )
 
   const retryFailed = useCallback(() => {
-    const failedKeys = new Set(results.filter((result) => result.outcome === 'failed').map(keyOf))
-    const queue = targets.filter((target) => failedKeys.has(keyOf(target)))
+    const failed = results.filter((result) => result.outcome === 'failed')
+    const messageKeys = new Set(failed.filter((row) => row.kind === 'message').map(resultKey))
+    const fileIds = new Set(failed.filter((row) => row.kind === 'file').map((row) => row.id))
+
+    const queue = targets.filter((target) => messageKeys.has(keyOf(target)))
+    const files = stagedFiles.filter((file) => fileIds.has(file.id))
     // Everything except the rows being retried survives, so the run total and the
     // audit log still describe the whole operation.
     const keepPrior = results.filter((result) => result.outcome !== 'failed')
-    if (queue.length > 0) void startDelete(queue, keepPrior)
-  }, [results, targets, startDelete])
+    if (queue.length + files.length > 0) void startDelete(queue, files, keepPrior)
+  }, [results, targets, stagedFiles, startDelete])
 
   const remaining = useMemo(() => {
-    const doneKeys = new Set(results.map(keyOf))
+    const doneKeys = new Set(results.filter((result) => result.kind === 'message').map(resultKey))
     return staged.filter((target) => !doneKeys.has(keyOf(target)))
   }, [results, staged])
 
@@ -531,11 +543,14 @@ export default function App() {
         <ConfirmModal
           total={staged.length}
           withFiles={stagedWithFiles}
+          fileCount={stagedFiles.length}
+          deleteFiles={deleteFiles}
+          onDeleteFilesChange={setDeleteFiles}
           perChannel={perChannel}
           dryRun={dryRun}
           onDryRunChange={setDryRun}
           onCancel={() => setConfirmOpen(false)}
-          onStart={() => void startDelete(staged)}
+          onStart={() => void startDelete(staged, deleteFiles ? stagedFiles : [])}
         />
       )}
 

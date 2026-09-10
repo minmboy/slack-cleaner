@@ -3,8 +3,12 @@ import { useI18n } from '../i18n/context'
 
 interface Props {
   total: number
-  /** How many staged messages have an attachment that will outlive them. */
+  /** Staged messages carrying an attachment, whoever uploaded it. */
   withFiles: number
+  /** Files I uploaded, which this run can actually delete. */
+  fileCount: number
+  deleteFiles: boolean
+  onDeleteFilesChange: (value: boolean) => void
   perChannel: { channelId: string; label: string; count: number }[]
   dryRun: boolean
   onDryRunChange: (value: boolean) => void
@@ -12,11 +16,22 @@ interface Props {
   onStart: () => void
 }
 
-export function ConfirmModal({ total, withFiles, perChannel, dryRun, onDryRunChange, onCancel, onStart }: Props) {
+export function ConfirmModal({
+  total,
+  withFiles,
+  fileCount,
+  deleteFiles,
+  onDeleteFilesChange,
+  perChannel,
+  dryRun,
+  onDryRunChange,
+  onCancel,
+  onStart,
+}: Props) {
   const { t, n } = useI18n()
   const [typed, setTyped] = useState('')
   const armed = dryRun || typed.trim().toLowerCase() === t.confirm.phrase.toLowerCase()
-  const estimateMin = Math.ceil((total * 1.3) / 60)
+  const estimateMin = Math.ceil(((total + (deleteFiles ? fileCount : 0)) * 1.3) / 60)
 
   return (
     <div className="scrim" onClick={onCancel}>
@@ -40,8 +55,22 @@ export function ConfirmModal({ total, withFiles, perChannel, dryRun, onDryRunCha
             </table>
           </div>
 
-          {withFiles > 0 && (
-            <p className="note warn">{t.confirm.filesNote(<b>{t.confirm.filesCount(n(withFiles))}</b>)}</p>
+          {fileCount > 0 ? (
+            <div className="note warn">
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={deleteFiles}
+                  onChange={(event) => onDeleteFilesChange(event.target.checked)}
+                />
+                {t.confirm.filesOptIn(n(fileCount))}
+              </label>
+              <p style={{ margin: '8px 0 0' }}>
+                {deleteFiles ? t.confirm.filesScopeWarning : t.confirm.filesKept(n(fileCount))}
+              </p>
+            </div>
+          ) : (
+            withFiles > 0 && <p className="note">{t.confirm.filesNotMine(n(withFiles))}</p>
           )}
 
           <p className="hint" style={{ marginBottom: 14 }}>
@@ -71,7 +100,7 @@ export function ConfirmModal({ total, withFiles, perChannel, dryRun, onDryRunCha
             {t.confirm.cancel}
           </button>
           <button className={dryRun ? 'btn primary' : 'btn danger'} disabled={!armed} onClick={onStart}>
-            {dryRun ? t.confirm.startDryRun : t.confirm.startDelete(n(total))}
+            {dryRun ? t.confirm.startDryRun : t.confirm.startDelete(n(total + (deleteFiles ? fileCount : 0)))}
           </button>
         </footer>
       </div>

@@ -115,6 +115,14 @@ export async function* streamUsers(ctx: CallContext, maxPages = 30): AsyncGenera
   for await (const page of pages) yield page.map(toUser)
 }
 
+/**
+ * Deletes a file outright. A file is global: this removes it from every
+ * conversation it was ever shared into, not just the one it was found in.
+ */
+export async function deleteFile(fileId: string, ctx: CallContext): Promise<void> {
+  await slackCall('files.delete', 3, { file: fileId }, ctx)
+}
+
 export async function fetchUser(userId: string, ctx: CallContext): Promise<SlackUser> {
   const res = await slackCall<{ user: RawUser }>('users.info', 4, { user: userId }, ctx)
   return toUser(res.user)

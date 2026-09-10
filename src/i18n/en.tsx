@@ -110,6 +110,8 @@ oauth_config:
       - im:history
       - users:read
       - chat:write
+      # --- keep to delete attachments as well ---
+      - files:write
       # --- keep these for group DMs and channels, otherwise delete them ---
       - mpim:read
       - mpim:history
@@ -266,13 +268,16 @@ settings:
       </>
     ),
     minutes: (count: string) => `${count} min`,
-    filesNote: (count: ReactNode): ReactNode => (
+    filesOptIn: (count: string) => `Also delete the ${count} file${count === '1' ? '' : 's'} I uploaded`,
+    filesScopeWarning: (
       <>
-        {count} of these carry attachments. <b>Deleting a message does not delete its file</b> — the files stay
-        in Slack and have to be removed separately.
+        A file does not belong to one conversation. <b>Deleting it removes the file from everywhere it was
+        shared, including conversations not selected here.</b>
       </>
     ),
-    filesCount: (count: string) => `${count}`,
+    filesKept: (count: string) => `Leave this unchecked and ${count} file${count === '1' ? '' : 's'} stay in Slack.`,
+    filesNotMine: (count: string) =>
+      `${count} of these messages carry attachments someone else uploaded, so they cannot be deleted here and will remain.`,
     dryRun: 'Dry run — check the order and targets without deleting anything',
     typePrompt: (phrase: ReactNode): ReactNode => <>Type {phrase} to proceed</>,
     cancel: 'Cancel',
@@ -292,6 +297,7 @@ settings:
     statAlreadyGone: 'Already gone',
     statNotAllowed: 'Not allowed',
     statFailed: 'Failed',
+    statFiles: 'Files deleted',
     rateLimitNote: (seconds: ReactNode): ReactNode => (
       <>Slack rate limit — resuming automatically in {seconds}.</>
     ),
@@ -310,8 +316,11 @@ settings:
     ),
     retryFailed: (count: string) => `Retry ${count} failed`,
     restart: 'Start over',
+    kindMessage: 'Message',
+    kindFile: 'File',
+    thKind: 'Kind',
     thConversation: 'Conversation',
-    thTs: 'ts',
+    thTarget: 'Target',
     thOutcome: 'Outcome',
     thCode: 'Code',
     outcome: {

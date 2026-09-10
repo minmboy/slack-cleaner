@@ -6,7 +6,7 @@
  * walk — including threads started by someone else, since my replies live there too.
  */
 import { slackPaginate, type CallContext } from './slack'
-import type { Conversation, ScanProgress, TargetMessage } from './types'
+import type { Conversation, ScanProgress, TargetFile, TargetMessage } from './types'
 
 /** Page size. Slack caps history/replies at 1000, but 200 is the documented sweet spot. */
 const PAGE_SIZE = 200
@@ -41,6 +41,16 @@ const SYSTEM_SUBTYPES = new Set([
   'ekm_access_denied',
 ])
 
+interface RawFile {
+  id?: string
+  name?: string
+  title?: string
+  /** Uploader. Only my own uploads are mine to delete. */
+  user?: string
+  /** 'tombstone' means the file is already gone. */
+  mode?: string
+}
+
 interface RawMessage {
   type?: string
   subtype?: string
@@ -50,7 +60,7 @@ interface RawMessage {
   text?: string
   thread_ts?: string
   reply_count?: number
-  files?: unknown[]
+  files?: RawFile[]
 }
 
 export function isMine(raw: RawMessage, myUserId: string): boolean {
@@ -61,13 +71,35 @@ export function isMine(raw: RawMessage, myUserId: string): boolean {
   return true
 }
 
-function toTarget(raw: RawMessage, channelId: string, isThreadParent: boolean): TargetMessage {
+/**
+ * Files on this message that I uploaded. A file I merely re-shared belongs to
+ * whoever uploaded it, and `files.delete` would refuse it anyway.
+ */
+function ownFiles(raw: RawMessage, channelId: string, myUserId: string): TargetFile[] {
+  if (!Array.isArray(raw.files)) return []
+  const out: TargetFile[] = []
+  for (const file of raw.files) {
+    if (!file?.id) continue
+    if (file.user !== myUserId) continue
+    if (file.mode === 'tombstone') continue
+    out.push({ id: file.id, name: file.title || file.name || file.id, channelId })
+  }
+  return out
+}
+
+function toTarget(
+  raw: RawMessage,
+  channelId: string,
+  isThreadParent: boolean,
+  myUserId: string,
+): TargetMessage {
   return {
     channelId,
     ts: raw.ts,
     threadTs: raw.thread_ts && raw.thread_ts !== raw.ts ? raw.thread_ts : undefined,
     isThreadParent,
     text: raw.text ?? '',
+    files: ownFiles(raw, channelId, myUserId),
     hasFiles: Array.isArray(raw.files) && raw.files.length > 0,
     time: Math.floor(Number(raw.ts) * 1000),
   }
@@ -151,7 +183,7 @@ export async function scanConversations(
           }
           if (isMine(raw, options.myUserId) && !seen.has(raw.ts)) {
             seen.add(raw.ts)
-            targets.push(toTarget(raw, conversation.id, hasThread))
+            targets.push(toTarget(raw, conversation.id, hasThread, options.myUserId))
             progress.mine++
           }
         }
@@ -171,7 +203,7 @@ export async function scanConversations(
             if (raw.ts === rootTs) continue // the root came from history already
             if (isMine(raw, options.myUserId) && !seen.has(raw.ts)) {
               seen.add(raw.ts)
-              targets.push(toTarget(raw, conversation.id, false))
+              targets.push(toTarget(raw, conversation.id, false, options.myUserId))
               progress.mine++
             }
           }

@@ -45,17 +45,29 @@ export function RunView({
 
   const retryable = problems.filter((result) => result.outcome === 'failed').length
 
+  // Only shown once files are part of the run, so the grid stays at four columns
+  // for the common message-only case.
+  const filesDeleted = useMemo(() => {
+    const rows = results.filter((result) => result.kind === 'file')
+    if (rows.length === 0) return null
+    return rows.filter((result) => result.outcome === 'deleted' || result.outcome === 'skipped').length
+  }, [results])
+
   function exportLog() {
     // Quote every cell: channel labels are display names and error codes can be
     // transport messages, either of which may contain a comma or a quote.
     const cell = (value: string) => `"${value.replace(/"/g, '""')}"`
     const rows = [
-      ['channel_id', 'channel_label', 'ts', 'outcome', 'error_code'].map(cell).join(','),
+      ['kind', 'channel_id', 'channel_label', 'target_id', 'target_label', 'outcome', 'error_code']
+        .map(cell)
+        .join(','),
       ...results.map((result) =>
         [
+          result.kind,
           result.channelId,
           labels.get(result.channelId) ?? '',
-          result.ts,
+          result.id,
+          result.label ?? '',
           result.outcome,
           result.errorCode ?? '',
         ]
@@ -132,6 +144,7 @@ export function RunView({
             tone={tally.not_allowed > 0 ? 'warn' : undefined}
           />
           <Stat label={t.run.statFailed} value={n(tally.failed)} tone={tally.failed > 0 ? 'danger' : undefined} />
+          {filesDeleted !== null && <Stat label={t.run.statFiles} value={n(filesDeleted)} tone="ok" />}
         </div>
 
         {rateLimitRemaining > 0 && (
@@ -171,17 +184,19 @@ export function RunView({
           <table className="fail-table">
             <thead>
               <tr>
+                <th>{t.run.thKind}</th>
                 <th>{t.run.thConversation}</th>
-                <th>{t.run.thTs}</th>
+                <th>{t.run.thTarget}</th>
                 <th>{t.run.thOutcome}</th>
                 <th>{t.run.thCode}</th>
               </tr>
             </thead>
             <tbody>
               {problems.slice(0, 200).map((result) => (
-                <tr key={`${result.channelId}|${result.ts}`}>
+                <tr key={`${result.kind}|${result.channelId}|${result.id}`}>
+                  <td>{result.kind === 'file' ? t.run.kindFile : t.run.kindMessage}</td>
                   <td>{labels.get(result.channelId) ?? result.channelId}</td>
-                  <td>{result.ts}</td>
+                  <td>{result.label ?? result.id}</td>
                   <td>{t.run.outcome[result.outcome]}</td>
                   <td className="code">{result.errorCode ?? '-'}</td>
                 </tr>

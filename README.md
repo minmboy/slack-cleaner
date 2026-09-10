@@ -69,7 +69,7 @@ If responses start coming back 15 at a time, the app flags it as the throttled c
 | Pick conversations | `conversations.list` plus `users.list` (names resolve in the background). Optional start date narrows the scan |
 | Scan | `conversations.history`, then `conversations.replies` for every message with `reply_count > 0`. Keeps only messages where `user` matches your own ID |
 | Review | A checkbox per message. Filter by date, keyword, thread, or attachment; select or clear whole conversations |
-| Delete | Type the confirmation word → `chat.delete`, one call per message. Progress, per-message failure reasons, CSV export |
+| Delete | Type the confirmation word → `chat.delete`, one call per message, then `files.delete` for attachments if you opted in. Progress, per-item failure reasons, CSV export |
 
 **Thread replies are deleted before their roots.** Deleting a root first leaves its replies stranded
 under a "message deleted" placeholder.
@@ -141,6 +141,8 @@ curl -sD - -o /dev/null https://minmboy.github.io/slack-cleaner/ | grep -i conte
 - Only messages where `message.user` equals the `user_id` from `auth.test` are ever collected.
   `chat.delete` is the final authority on what may actually be removed.
 - **Dry run** walks the whole queue and reports targets and ordering without deleting anything.
+- **File deletion is off by default.** It runs as a second phase, after the messages, and only when you
+  tick the box — with the "removes it everywhere it was shared" warning next to it.
 - The delete button stays disabled until you type the confirmation word.
 - The token lives in memory, optionally in `sessionStorage`. **Revoke token** calls `auth.revoke`.
 - `invalid_auth`, `token_revoked` and `missing_scope` abort the run; every other per-message failure is
@@ -153,14 +155,18 @@ curl -sD - -o /dev/null https://minmboy.github.io/slack-cleaner/ | grep -i conte
   This tool records that rather than working around it.
 - This is the same action as deleting in the Slack UI. Records **may survive in your company's export,
   Discovery, or retention backups.**
-- **Attached files are not deleted.** `chat.delete` removes the message; the file is a separate object
-  with its own `files.delete` method and its own delete action in the Slack UI. Whether a file ever goes
-  away depends on a workspace setting you cannot see. Where file retention is aligned to message
-  retention, Slack ["will keep all files until any messages that shared them are deleted"](https://slack.com/help/articles/203457187-Customize-data-retention-in-Slack),
-  after which files with no shares get a 30-day grace period and are then permanently deleted. Where it
-  is not aligned, the file simply stays — listed under your Files and reachable by its permalink to
-  anyone who already had access. The confirm screen tells you how many staged messages carry an
-  attachment so this is visible before you commit, not afterwards.
+- **Attachments are opt-in, and deleting one is wider than it looks.** `chat.delete` only removes the
+  message; the file is a separate object, so the run calls `files.delete` as a second phase and only if
+  you tick the box on the confirm screen. **A file does not belong to a conversation** — deleting it
+  removes it from every conversation it was ever shared into, including ones you did not select here.
+  Only files you uploaded are offered; a file you merely re-shared belongs to its uploader.
+  Requires the `files:write` scope.
+- **Leaving attachments in place is not the same as them surviving forever.** Where a workspace aligns
+  file retention to message retention, Slack ["will keep all files until any messages that shared them
+  are deleted"](https://slack.com/help/articles/203457187-Customize-data-retention-in-Slack), after
+  which files with no shares get a 30-day grace period and are then permanently deleted. Where it is not
+  aligned, the file stays — listed under your Files and reachable by its permalink to anyone who already
+  had access. You cannot see which applies to your workspace, which is why the option exists.
 - **Private channels and group DMs you have left are unreachable.** You are no longer a member, so they
   are neither listed nor readable. Rejoin to clean one up, or accept that those messages stay.
 - Setting a scan start date filters `conversations.history` by *root* timestamp, so replies you wrote
@@ -206,9 +212,9 @@ For a one-time cleanup, not deploying at all and running `npm run dev` locally i
 
 ```
 src/lib/slack.ts    CORS-shaped fetch, per-method rate limiting, 429 retry, cursor pagination
-src/lib/api.ts      Typed wrappers: auth.test, conversations.list, users.list, users.info
+src/lib/api.ts      Typed wrappers: auth.test, conversations.list, users.list, users.info, files.delete
 src/lib/scan.ts     Walks history + replies, collects your own messages
-src/lib/deleter.ts  Delete queue (replies before roots, newest first), per-failure classification
+src/lib/deleter.ts  Delete queue: messages (replies before roots, newest first), then files; per-failure classification
 src/i18n/           Hand-rolled translations; ko.tsx defines the type every other language must match
 src/App.tsx         Step state machine
 vite.config.ts      The CSP, written once and emitted as both a meta tag and a _headers file

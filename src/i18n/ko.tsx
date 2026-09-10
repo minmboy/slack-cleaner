@@ -115,6 +115,8 @@ oauth_config:
       - im:history
       - users:read
       - chat:write
+      # --- 첨부파일도 함께 삭제하려면 유지 ---
+      - files:write
       # --- 그룹 DM / 채널까지 정리하려면 유지, 아니면 삭제 ---
       - mpim:read
       - mpim:history
@@ -267,13 +269,16 @@ settings:
       <>Slack rate limit(분당 50회) 때문에 약 {minutes} 걸립니다. 탭을 열어 둔 채로 두세요.</>
     ),
     minutes: (count: string) => `${count}분`,
-    filesNote: (count: ReactNode): ReactNode => (
+    filesOptIn: (count: string) => `내가 올린 첨부파일 ${count}개도 함께 삭제`,
+    filesScopeWarning: (
       <>
-        이 중 {count}개에 첨부파일이 있습니다. <b>메시지를 지워도 파일은 Slack에 남습니다</b> — 파일은 Slack에서
-        따로 삭제해야 합니다.
+        파일은 특정 대화에 속하지 않습니다. <b>삭제하면 여기서 선택하지 않은 대화를 포함해, 공유된 모든 곳에서
+        사라집니다.</b>
       </>
     ),
-    filesCount: (count: string) => `${count}개`,
+    filesKept: (count: string) => `체크하지 않으면 파일 ${count}개는 Slack에 그대로 남습니다.`,
+    filesNotMine: (count: string) =>
+      `이 중 ${count}개 메시지에 첨부파일이 있지만 내가 올린 것이 아니라 삭제할 수 없습니다. 파일은 그대로 남습니다.`,
     dryRun: '연습 실행 — 실제로 지우지 않고 순서와 대상만 확인',
     typePrompt: (phrase: ReactNode): ReactNode => <>진행하려면 {phrase} 를 입력하세요</>,
     cancel: '취소',
@@ -293,6 +298,7 @@ settings:
     statAlreadyGone: '이미 없음',
     statNotAllowed: '권한 없음',
     statFailed: '실패',
+    statFiles: '삭제한 파일',
     rateLimitNote: (seconds: ReactNode): ReactNode => <>Slack rate limit — {seconds} 대기 후 자동으로 이어집니다.</>,
     seconds: (seconds: number) => `${seconds}초`,
     abortedNote: (code: ReactNode, remaining: string): ReactNode => (
@@ -309,8 +315,11 @@ settings:
     ),
     retryFailed: (count: string) => `실패한 ${count}개 재시도`,
     restart: '처음으로',
+    kindMessage: '메시지',
+    kindFile: '파일',
+    thKind: '종류',
     thConversation: '대화',
-    thTs: 'ts',
+    thTarget: '대상',
     thOutcome: '결과',
     thCode: '코드',
     outcome: {

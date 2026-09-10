@@ -1,4 +1,4 @@
-import type { TargetMessage } from './types'
+import type { DeleteResult, TargetMessage } from './types'
 
 export interface Formatters {
   n: (value: number) => string
@@ -28,3 +28,6 @@ export function makeFormatters(locale: string): Formatters {
 
 /** Stable identity for a message: unique across the whole scan. */
 export const keyOf = (target: Pick<TargetMessage, 'channelId' | 'ts'>) => `${target.channelId}|${target.ts}`
+
+/** The same identity for a result row, so message results line up with their targets. */
+export const resultKey = (result: Pick<DeleteResult, 'channelId' | 'id'>) => `${result.channelId}|${result.id}`
