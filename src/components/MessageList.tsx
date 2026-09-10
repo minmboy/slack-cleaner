@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useI18n } from '../i18n/context'
 import { keyOf } from '../lib/format'
 import type { TargetMessage } from '../lib/types'
@@ -12,17 +12,22 @@ import type { TargetMessage } from '../lib/types'
  * broken". So: every row is reachable by ordinary scrolling, and only the
  * visible ones exist in the DOM.
  *
- * Row heights are PINNED in CSS rather than measured — see `--row-h` /
- * `--head-h`. That makes every offset pure arithmetic, which matters because
- * this is the screen where someone verifies an irreversible deletion: a
- * measurement that drifts would desync the scrollbar from the content.
+ * Row and head heights are fixed and applied inline from ROW_H / HEAD_H, so the
+ * numbers the offsets are computed from are the numbers the boxes are drawn
+ * with. There is no second copy in the stylesheet to drift out of step — which
+ * matters because this is the screen where someone verifies an irreversible
+ * deletion, and a drifting offset would desync the scrollbar from the content.
  *
  * Heads and rows are different heights, so offsets come from a prefix sum
  * rather than `index * ROW_H`, which would drift by (headH - rowH) per group.
  */
 
-/** Must match `--row-h` and `--head-h` in index.css. */
-const ROW_H = 54
+/**
+ * Two lines of 12.5px text at line-height 1.55 take 38.75px; with 16px of
+ * vertical padding and the 1px top border that is 55.75px. 56 fits the
+ * two-line clamp without shaving the descenders off the second line.
+ */
+const ROW_H = 56
 const HEAD_H = 49
 
 /** Rows kept mounted beyond the viewport, so a fast scroll does not flash blank. */
@@ -30,13 +35,13 @@ const OVERSCAN = 8
 
 /**
  * Below this many rows, render everything. Small scans then behave exactly as
- * they did before — and, more importantly, browser find-in-page keeps working
- * on the screen where the user checks what is about to be deleted.
+ * they did before — and browser find-in-page keeps working on the screen where
+ * the user checks what is about to be deleted.
  */
 const VIRTUALIZE_ABOVE = 400
 
 const MIN_HEIGHT = 480
-/** Space left under the list for the sticky footer when it cannot be measured. */
+/** Space left under the list for the sticky footer. */
 const FOOTER_RESERVE = 132
 
 type Row =
@@ -56,23 +61,37 @@ function locate(offsets: number[], y: number): number {
   return lo
 }
 
-/** Fill the space actually left below the toolbar instead of a magic 620px. */
-function useFillHeight(ref: React.RefObject<HTMLDivElement | null>): number {
-  const [height, setHeight] = useState(0)
+/**
+ * Fill the space actually left below the toolbar instead of a magic 620px.
+ *
+ * Seeded rather than 0 and measured before paint: the window reads this on the
+ * very first render, and a 0 there would mount every row once before an effect
+ * corrected it. Re-measured when the panel above changes height — the filter's
+ * reset button appearing, a note wrapping, the pinned bar arriving — not only
+ * when the window is resized.
+ */
+function useFillHeight(ref: React.RefObject<HTMLDivElement | null>, remeasureOn: unknown): number {
+  const [height, setHeight] = useState(MIN_HEIGHT)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = ref.current
     if (!element) return
     const measure = () => {
       // Document space, so a scrolled page cannot feed back into the result.
       const top = element.getBoundingClientRect().top + window.scrollY
-      const next = Math.round(window.innerHeight - top - FOOTER_RESERVE)
-      setHeight(Math.max(MIN_HEIGHT, next))
+      const next = Math.max(MIN_HEIGHT, Math.round(window.innerHeight - top - FOOTER_RESERVE))
+      setHeight((prev) => (prev === next ? prev : next))
     }
     measure()
     window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
-  }, [ref])
+    const panel = element.closest('.panel')
+    const observer = panel && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
+    if (panel && observer) observer.observe(panel)
+    return () => {
+      window.removeEventListener('resize', measure)
+      observer?.disconnect()
+    }
+  }, [ref, remeasureOn])
 
   return height
 }
@@ -90,10 +109,10 @@ interface Props {
 export function MessageList({ groups, labels, excluded, onToggle, onBulk, empty }: Props) {
   const { t, n, formatTime } = useI18n()
   const scrollerRef = useRef<HTMLDivElement>(null)
+  /** Whether focus was last inside the list — see the focus-keeping effect. */
+  const focusWithinRef = useRef(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [scrollTop, setScrollTop] = useState(0)
-
-  const height = useFillHeight(scrollerRef)
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = []
@@ -132,15 +151,62 @@ export function MessageList({ groups, labels, excluded, onToggle, onBulk, empty 
     return out
   }, [groups, excluded])
 
-  const virtualize = rows.length > VIRTUALIZE_ABOVE && height > 0
+  const totalMessages = useMemo(() => groups.reduce((sum, [, items]) => sum + items.length, 0), [groups])
+
+  const virtualize = rows.length > VIRTUALIZE_ABOVE
+  const height = useFillHeight(scrollerRef, virtualize)
   const total = offsets[rows.length]
+
+  // The list can shrink under a deep scroll position — a filter, a collapse —
+  // and the browser clamps the element without necessarily firing a scroll
+  // event. Read the real position back whenever the list changes shape, so the
+  // window is never computed from a position the element is not at.
+  useLayoutEffect(() => {
+    const element = scrollerRef.current
+    if (element) setScrollTop(element.scrollTop)
+  }, [rows])
+
+  /** Scroll position, clamped to what the current list can actually reach. */
+  const y = Math.min(scrollTop, Math.max(0, total - height))
 
   const [start, end] = useMemo(() => {
     if (!virtualize) return [0, rows.length]
-    const first = Math.max(0, locate(offsets, scrollTop) - OVERSCAN)
-    const last = Math.min(rows.length, locate(offsets, scrollTop + height) + 1 + OVERSCAN)
+    const first = Math.max(0, locate(offsets, y) - OVERSCAN)
+    const last = Math.min(rows.length, locate(offsets, y + height) + 1 + OVERSCAN)
     return [first, last]
-  }, [virtualize, offsets, scrollTop, height, rows.length])
+  }, [virtualize, offsets, y, height, rows.length])
+
+  /** Rows actually on screen — distinct from [start, end), which overscans. */
+  const [firstVisible, lastVisible] = useMemo(() => {
+    const max = rows.length - 1
+    if (max < 0) return [0, -1]
+    return [Math.min(locate(offsets, y), max), Math.min(locate(offsets, y + height - 1), max)]
+  }, [offsets, y, height, rows.length])
+
+  /** The group the viewport is inside, pinned above the scroller. */
+  const currentGroup = rows[firstVisible]?.channelId ?? groups[0]?.[0]
+
+  /** Message ordinals on screen, so the readout counts content, not heads. */
+  const visibleMessages = useMemo(() => {
+    let first = 0
+    let last = 0
+    for (let i = firstVisible; i <= lastVisible; i++) {
+      const row = rows[i]
+      if (row?.type !== 'msg') continue
+      if (!first) first = row.ordinal
+      last = row.ordinal
+    }
+    return { first, last }
+  }, [rows, firstVisible, lastVisible])
+
+  // Rows outside the window are unmounted, so an ordinary wheel scroll can
+  // destroy the focused checkbox and drop focus to <body>, sending the next Tab
+  // back to the top of the page. Keep focus in the list instead.
+  useLayoutEffect(() => {
+    const element = scrollerRef.current
+    if (!element || !focusWithinRef.current) return
+    if (!element.contains(document.activeElement)) element.focus({ preventScroll: true })
+  })
 
   const onScroll = useCallback(() => {
     const element = scrollerRef.current
@@ -156,31 +222,6 @@ export function MessageList({ groups, labels, excluded, onToggle, onBulk, empty 
     })
   }, [])
 
-  /** The group the viewport is currently inside, pinned above the scroller. */
-  const currentGroup = rows[start]?.channelId ?? groups[0]?.[0]
-
-  /** Message ordinals bounding the window, so the readout counts content only. */
-  const visibleMessages = useMemo(() => {
-    let first = 0
-    let last = 0
-    for (let i = start; i < end; i++) {
-      const row = rows[i]
-      if (row.type !== 'msg') continue
-      if (!first) first = row.ordinal
-      last = row.ordinal
-    }
-    const totalMessages = groups.reduce((sum, [, items]) => sum + items.length, 0)
-    return { first, last, totalMessages }
-  }, [rows, start, end, groups])
-
-  if (groups.length === 0) {
-    return (
-      <div className="list-shell">
-        <div className="empty">{empty}</div>
-      </div>
-    )
-  }
-
   const slice = rows.slice(start, end)
 
   return (
@@ -189,46 +230,58 @@ export function MessageList({ groups, labels, excluded, onToggle, onBulk, empty 
         <div className="list-pinned">
           <span className="title">{labels.get(currentGroup) ?? currentGroup}</span>
           <span className="count">
-            {t.review.listPosition(
-              n(visibleMessages.first),
-              n(visibleMessages.last),
-              n(visibleMessages.totalMessages),
-            )}
+            {t.review.listPosition(n(visibleMessages.first), n(visibleMessages.last), n(totalMessages))}
           </span>
         </div>
       )}
 
+      {/* Always mounted, even when empty: a recreated scroller starts at 0 while
+          the remembered position does not, which would window the wrong rows. */}
       <div
         className="list"
         ref={scrollerRef}
+        tabIndex={0}
         onScroll={onScroll}
+        onFocus={() => {
+          focusWithinRef.current = true
+        }}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) focusWithinRef.current = false
+        }}
         style={virtualize ? { height, maxHeight: 'none' } : undefined}
+        data-virtualized={virtualize || undefined}
         role="group"
         aria-label={t.review.listLabel}
       >
+        {groups.length === 0 && <div className="empty">{empty}</div>}
+
         {virtualize && <div style={{ height: offsets[start] }} aria-hidden="true" />}
 
         {slice.map((row, index) => {
           if (row.type === 'head') {
             const items = row.items
             const groupSelected = selectedPerGroup.get(row.channelId) ?? 0
+            const open = !collapsed.has(row.channelId)
             return (
-              <div
-                className="msg-group-head"
-                key={`head:${row.channelId}`}
-                onClick={() => toggleGroup(row.channelId)}
-              >
-                <span className="caret">{collapsed.has(row.channelId) ? '▸' : '▾'}</span>
-                <span className="title">{labels.get(row.channelId) ?? row.channelId}</span>
+              <div className="msg-group-head" key={`head:${row.channelId}`} style={{ height: HEAD_H }}>
+                <button
+                  type="button"
+                  className="head-toggle"
+                  aria-expanded={open}
+                  onClick={() => toggleGroup(row.channelId)}
+                >
+                  <span className="caret" aria-hidden="true">
+                    {open ? '▾' : '▸'}
+                  </span>
+                  <span className="title">{labels.get(row.channelId) ?? row.channelId}</span>
+                </button>
                 <span className="count">
                   {n(groupSelected)} / {n(items.length)}
                 </span>
                 <button
+                  type="button"
                   className="btn ghost sm"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onBulk(items, groupSelected !== items.length)
-                  }}
+                  onClick={() => onBulk(items, groupSelected !== items.length)}
                 >
                   {groupSelected === items.length ? t.review.groupDeselect : t.review.groupSelect}
                 </button>
@@ -240,7 +293,13 @@ export function MessageList({ groups, labels, excluded, onToggle, onBulk, empty 
           const key = keyOf(target)
           const on = !excluded.has(key)
           return (
-            <label className="msg-row" key={key} data-on={on} data-index={start + index}>
+            <label
+              className="msg-row"
+              key={key}
+              style={{ height: ROW_H }}
+              data-on={on}
+              data-index={start + index}
+            >
               <input type="checkbox" checked={on} onChange={() => onToggle(target)} />
               <span className="when">{formatTime(target.time)}</span>
               <span className="body">

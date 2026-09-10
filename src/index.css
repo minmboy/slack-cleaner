@@ -402,17 +402,47 @@ kbd, code.inline {
 
 /* ---------- message review ---------- */
 
-/* Heights are pinned so the windowing offsets in MessageList.tsx are exact
-   arithmetic. ROW_H / HEAD_H there must match these two numbers. */
+/* Row and head heights are set inline from ROW_H / HEAD_H in MessageList.tsx,
+   the same constants the window offsets are computed from. */
 .msg-group-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 49px;
   padding: 0 18px;
   background: var(--surface-2);
   box-shadow: inset 0 -1px 0 var(--line);
+}
+/* Windowing uses spacer divs, which sticky heads cannot live beside; the pinned
+   bar stands in there. Below the threshold the list is plain flow, so the
+   conversation heads can stick again. */
+.list:not([data-virtualized]) .msg-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.head-toggle {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
+}
+.head-toggle:focus-visible,
+.list:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.list:focus:not(:focus-visible) {
+  outline: none;
 }
 .msg-group-head .caret {
   color: var(--text-faint);
@@ -422,6 +452,7 @@ kbd, code.inline {
 }
 .msg-group-head .title {
   flex: 1;
+  min-width: 0;
   font-weight: 560;
   font-size: 13px;
   overflow: hidden;
@@ -435,7 +466,6 @@ kbd, code.inline {
   grid-template-columns: 16px 128px 1fr;
   gap: 11px;
   align-items: start;
-  height: 54px;
   padding: 8px 18px;
   border-top: 1px solid var(--line);
   cursor: pointer;

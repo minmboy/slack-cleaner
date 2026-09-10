@@ -72,25 +72,41 @@ export interface RouteFacts {
   scanning: boolean
   scanCompleted: boolean
   runStarted: boolean
+  /**
+   * A run that was not a dry run has started. It consumed the staged set, but
+   * the review list still holds the pre-run staging: re-showing it would offer
+   * deleted messages as "staged for deletion", and confirming again would
+   * replace the only record of what went.
+   */
+  runDestructive: boolean
 }
 
 export type ClampReason = 'ok' | 'not-restorable'
 
+const ok = (step: Step): { step: Step; reason: ClampReason } => ({ step, reason: 'ok' })
+const lost = (): { step: Step; reason: ClampReason } => ({ step: 'select', reason: 'not-restorable' })
+
 export function resolveStep(asked: Step, facts: RouteFacts): { step: Step; reason: ClampReason } {
-  if (!facts.identity) return { step: 'connect', reason: asked === 'connect' ? 'ok' : 'not-restorable' }
+  if (!facts.identity) {
+    // Only a screen that needed scan data is worth explaining; a bookmarked
+    // picker simply asks for the token again.
+    const neededData = asked === 'scan' || asked === 'review' || asked === 'run'
+    return { step: 'connect', reason: neededData ? 'not-restorable' : 'ok' }
+  }
   // A delete run is irreversible and must stay visible while it is happening.
-  if (facts.running) return { step: 'run', reason: 'ok' }
-  if (asked === 'connect') return { step: 'select', reason: 'ok' }
+  if (facts.running) return ok('run')
+  if (asked === 'connect' || asked === 'select') return ok('select')
+
+  // Asking for an earlier screen of a flow that has moved on lands on the
+  // furthest screen that still tells the truth, never on a stale one.
   if (asked === 'scan') {
-    return facts.scanning ? { step: 'scan', reason: 'ok' } : { step: 'select', reason: 'not-restorable' }
+    if (facts.scanning) return ok('scan')
+    if (facts.runDestructive) return ok('run')
+    return facts.scanCompleted ? ok('review') : lost()
   }
   if (asked === 'review') {
-    return facts.scanCompleted
-      ? { step: 'review', reason: 'ok' }
-      : { step: 'select', reason: 'not-restorable' }
+    if (facts.runDestructive) return ok('run')
+    return facts.scanCompleted ? ok('review') : lost()
   }
-  if (asked === 'run') {
-    return facts.runStarted ? { step: 'run', reason: 'ok' } : { step: 'select', reason: 'not-restorable' }
-  }
-  return { step: 'select', reason: 'ok' }
+  return facts.runStarted || facts.runDestructive ? ok('run') : lost()
 }

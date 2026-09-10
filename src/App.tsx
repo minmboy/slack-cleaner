@@ -32,6 +32,9 @@ function prettyMpim(name: string): string {
   return stripped.split('--').join(', ')
 }
 
+/** Identity of a result row: a message and a file can never share one. */
+const rowKey = (row: Pick<DeleteResult, 'kind' | 'channelId' | 'id'>) => `${row.kind}|${resultKey(row)}`
+
 export default function App() {
   const { t, n, lang, setLang } = useI18n()
   const [token, setToken] = useState('')
@@ -52,7 +55,16 @@ export default function App() {
 
   const [scanning, setScanning] = useState(false)
   const [scanCompleted, setScanCompleted] = useState(false)
+  /** A scan that died outright, shown on the picker it drops the user back to. */
+  const [scanFatal, setScanFatal] = useState<string | null>(null)
   const [runStarted, setRunStarted] = useState(false)
+  const [runDestructive, setRunDestructive] = useState(false)
+  /**
+   * Why the last landing was redirected. Latched, because the redirect itself
+   * rewrites the address bar — deriving the notice from the live hash would
+   * erase it on the very next render.
+   */
+  const [routeNotice, setRouteNotice] = useState<null | 'not-restorable' | 'kinds'>(null)
   /**
    * Conversation labels frozen when the scan finished. The picker's list can be
    * refetched behind the user's back (a chip change, a Back/Forward), and the
@@ -91,8 +103,9 @@ export default function App() {
         scanning,
         scanCompleted,
         runStarted,
+        runDestructive,
       }),
-    [asked.step, identity, running, scanning, scanCompleted, runStarted],
+    [asked.step, identity, running, scanning, scanCompleted, runStarted, runDestructive],
   )
 
   /** Navigate. `replace` for filter-ish changes, `push` for real destinations. */
@@ -104,16 +117,30 @@ export default function App() {
   )
 
   const setKinds = useCallback(
-    (next: ConversationKind[]) => goto({ kinds: canonicalKinds(next.join(',')).kinds }, 'replace'),
+    (next: ConversationKind[]) => {
+      setRouteNotice(null)
+      goto({ kinds: canonicalKinds(next.join(',')).kinds }, 'replace')
+    },
     [goto],
   )
 
   // Write back whatever the clamp changed, so the address bar never shows a
-  // route the app is not on.
+  // route the app is not on — and remember why, before the rewrite erases it.
   useEffect(() => {
     const canonical = formatRoute({ step, kinds })
-    if (`/${hash.replace(/^\//, '')}` !== canonical) writeHash(canonical, 'replace')
-  }, [step, kinds, hash])
+    if (`/${hash.replace(/^\//, '')}` === canonical) return
+    if (stepReason === 'not-restorable') setRouteNotice('not-restorable')
+    else if (kindsClamped) setRouteNotice('kinds')
+    writeHash(canonical, 'replace')
+  }, [step, kinds, hash, stepReason, kindsClamped])
+
+  // A notice explains one landing, so moving on into a scan retires it. The
+  // delete dialog belongs to the review screen alone: a route change must not
+  // leave it floating, armed, over another one.
+  useEffect(() => {
+    if (step === 'scan' || step === 'review' || step === 'run') setRouteNotice(null)
+    if (step !== 'review') setConfirmOpen(false)
+  }, [step])
 
   const rateLimitRemaining = Math.max(0, Math.ceil((rateLimitUntil - nowTick) / 1000))
 
@@ -210,7 +237,12 @@ export default function App() {
     setAborted(null)
     setScanning(false)
     setScanCompleted(false)
+    setScanFatal(null)
     setRunStarted(false)
+    setRunDestructive(false)
+    setRouteNotice(null)
+    setConfirmOpen(false)
+    setDeleteFiles(false)
     setScanLabels(new Map())
     writeHash(formatRoute({ step: 'connect', kinds: ['im'] }), 'replace')
   }
@@ -348,6 +380,13 @@ export default function App() {
     scanAbortRef.current = controller
     setScanning(true)
     setScanCompleted(false)
+    setScanFatal(null)
+    // A new scan starts a new flow: the previous run's screen, its results and
+    // its file opt-in must not carry into it.
+    setRunStarted(false)
+    setRunDestructive(false)
+    setResults([])
+    setDeleteFiles(false)
     goto({ step: 'scan' })
     setProgress(chosen.map((item) => ({
       channelId: item.id,
@@ -385,18 +424,14 @@ export default function App() {
       goto({ step: 'review' })
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
-      setScanErrors((prev) => [
-        ...prev,
-        {
-          channelId: '-',
-          channelLabel: t.app.scanErrorLabel,
-          code: error instanceof Error ? error.message : 'unknown_error',
-        },
-      ])
+      // The scan screen is about to become unreachable (nothing is scanning), so
+      // an error recorded there would never be seen. Carry it to the picker.
+      setScanFatal(error instanceof Error ? error.message : 'unknown_error')
+      goto({ step: 'select' }, 'replace')
     } finally {
       setScanning(false)
     }
-  }, [decorated, selected, scanFrom, identity, makeCtx, t, labels, goto])
+  }, [decorated, selected, scanFrom, identity, makeCtx, labels, goto])
 
   useEffect(() => {
     if (step !== 'scan' && scanning) {
@@ -433,24 +468,35 @@ export default function App() {
    * drop those rows from the tally, the failure table and the CSV audit log.
    */
   const startDelete = useCallback(
-    async (queue: TargetMessage[], files: TargetFile[], keepPrior: DeleteResult[] = []) => {
+    async (
+      queue: TargetMessage[],
+      files: TargetFile[],
+      keepPrior: DeleteResult[] = [],
+      /** Failed rows left out of `keepPrior` because this run should re-report them. */
+      pending: DeleteResult[] = [],
+    ) => {
       const controller = new AbortController()
       deleteAbortRef.current = controller
       setConfirmOpen(false)
       setRunStarted(true)
+      setRunDestructive(!dryRun)
       goto({ step: 'run' })
       setResults(keepPrior)
       setRunTotal(keepPrior.length + queue.length + files.length)
       setRunning(true)
       setAborted(null)
 
+      const reported = new Set<string>()
       try {
         await runDeletion(
           queue,
           {
             dryRun,
             files,
-            onResult: (result) => setResults((prev) => [...prev, result]),
+            onResult: (result) => {
+              reported.add(rowKey(result))
+              setResults((prev) => [...prev, result])
+            },
           },
           makeCtx(controller.signal),
         )
@@ -460,6 +506,11 @@ export default function App() {
           setAborted(error instanceof Error ? error.message : 'unknown_error')
         }
       } finally {
+        // A stop or a fatal code ends the run before it re-reports every retried
+        // row. Put the old failure back for anything it never reached, so the
+        // tally and the export still account for it.
+        const unreported = pending.filter((row) => !reported.has(rowKey(row)))
+        if (unreported.length > 0) setResults((prev) => [...prev, ...unreported])
         setRunning(false)
       }
     },
@@ -476,7 +527,8 @@ export default function App() {
     // Everything except the rows being retried survives, so the run total and the
     // audit log still describe the whole operation.
     const keepPrior = results.filter((result) => result.outcome !== 'failed')
-    if (queue.length + files.length > 0) void startDelete(queue, files, keepPrior)
+    // `failed` rides along so any row the retry never reaches is put back.
+    if (queue.length + files.length > 0) void startDelete(queue, files, keepPrior, failed)
   }, [results, targets, stagedFiles, startDelete])
 
   const remaining = useMemo(() => {
@@ -533,12 +585,14 @@ export default function App() {
         </ol>
       )}
 
-      {step === 'connect' && <TokenGate onSubmit={(value, remember) => void connect(value, remember)} busy={connectBusy} error={connectError} />}
-
-      {step === 'select' && stepReason === 'not-restorable' && (
+      {(step === 'connect' || step === 'select') && routeNotice === 'not-restorable' && (
         <p className="note warn">{t.app.routeNotRestorable}</p>
       )}
-      {step === 'select' && kindsClamped && <p className="note warn">{t.app.kindsClamped}</p>}
+
+      {step === 'connect' && <TokenGate onSubmit={(value, remember) => void connect(value, remember)} busy={connectBusy} error={connectError} />}
+
+      {step === 'select' && routeNotice === 'kinds' && <p className="note warn">{t.app.kindsClamped}</p>}
+      {step === 'select' && scanFatal && <p className="note danger">{t.app.scanFailed(scanFatal)}</p>}
       {step === 'select' && listError && <p className="note danger">{listError}</p>}
 
       {step === 'select' && (
@@ -598,7 +652,12 @@ export default function App() {
               excluded={excluded}
               onExcludedChange={setExcluded}
               onBack={() => goto({ step: 'select' })}
-              onConfirm={() => setConfirmOpen(true)}
+              onConfirm={() => {
+                // File deletion is an opt-in to something wider than the list
+                // shows; it must be ticked afresh each time, never inherited.
+                setDeleteFiles(false)
+                setConfirmOpen(true)
+              }}
             />
           )}
         </>
@@ -623,12 +682,14 @@ export default function App() {
             setExcluded(new Set())
             setScanCompleted(false)
             setRunStarted(false)
+            setRunDestructive(false)
+            setDeleteFiles(false)
             goto({ step: 'select' })
           }}
         />
       )}
 
-      {confirmOpen && (
+      {step === 'review' && confirmOpen && (
         <ConfirmModal
           total={staged.length}
           withFiles={stagedWithFiles}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useI18n } from '../i18n/context'
 
 interface Props {
@@ -30,12 +30,21 @@ export function ConfirmModal({
 }: Props) {
   const { t, n } = useI18n()
   const [typed, setTyped] = useState('')
+
+  // A dialog guarding an irreversible action must be dismissible without a mouse.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
   const armed = dryRun || typed.trim().toLowerCase() === t.confirm.phrase.toLowerCase()
   const estimateMin = Math.ceil(((total + (deleteFiles ? fileCount : 0)) * 1.3) / 60)
 
   return (
     <div className="scrim" onClick={onCancel}>
-      <div className="modal" onClick={(event) => event.stopPropagation()}>
+      <div className="modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <header className="modal-head">
           <h2>{t.confirm.title}</h2>
         </header>

@@ -12,8 +12,20 @@
 import { keyOf, resultKey } from './format'
 import type { DeleteResult, TargetMessage } from './types'
 
-/** Quote every cell: display names and error text can hold commas and quotes. */
-const cell = (value: string) => `"${value.replace(/"/g, '""')}"`
+/**
+ * Quote every cell: display names and error text can hold commas and quotes.
+ *
+ * Quoting stops a delimiter from splitting a cell; it does not stop Excel,
+ * LibreOffice or Sheets from evaluating a cell that *starts* with a formula
+ * character. Message text is written by whoever DMed you, and this file is
+ * built to be opened in Excel (see the BOM below), so such a value gets a
+ * leading apostrophe — shown, not run. The JSON exports stay byte-exact.
+ */
+const FORMULA_LEADER = /^[=+\-@\t\r]/
+const cell = (value: string) => {
+  const inert = FORMULA_LEADER.test(value) ? `'${value}` : value
+  return `"${inert.replace(/"/g, '""')}"`
+}
 
 export function toCsv(header: string[], rows: string[][]): string {
   const lines = [header, ...rows].map((row) => row.map(cell).join(','))

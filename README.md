@@ -151,6 +151,8 @@ curl -sD - -o /dev/null https://minmboy.github.io/slack-cleaner/ | grep -i conte
 - **File deletion is off by default.** It runs as a second phase, after the messages, and only when you
   tick the box — with the "removes it everywhere it was shared" warning next to it.
 - The delete button stays disabled until you type the confirmation word.
+- CSV cells that begin with `=`, `+`, `-`, `@` or a control character get a leading `'`, so a spreadsheet
+  shows a message such as `=HYPERLINK(…)` instead of evaluating it. JSON exports carry text byte-for-byte.
 - The token lives in memory, optionally in `sessionStorage`. **Revoke token** calls `auth.revoke`.
 - `invalid_auth`, `token_revoked` and `missing_scope` abort the run; every other per-message failure is
   recorded and the run continues.
@@ -186,7 +188,7 @@ curl -sD - -o /dev/null https://minmboy.github.io/slack-cleaner/ | grep -i conte
 
 ## Deployment
 
-The output is static and there is no client-side router, so no rewrite rules are needed anywhere.
+The output is static and routing is hash-based, so no rewrite rules are needed anywhere.
 The build carries its own CSP in a meta tag, so the policy survives on hosts that cannot set headers.
 
 **Cloudflare Pages / Netlify** — they pick up the generated `dist/_headers` automatically, so the
@@ -225,7 +227,9 @@ GitHub Pages subpath with no rewrite rules, so `/review` would 404 on refresh.
 
 Because scan results are memory-only, some routes cannot be restored. Opening `#/review` cold does not show
 an empty list implying there is nothing to delete — it drops you back to the picker and says why. A delete
-run pins the route while it is in flight; navigating away cannot orphan it.
+run pins the route while it is in flight; navigating away cannot orphan it. Once a real run has started,
+Back cannot reopen its review list: those messages are gone, and confirming the same list again would
+overwrite the record of the run. A dry run deletes nothing, so after one, Back returns to the list.
 
 ## Layout
 
@@ -235,11 +239,11 @@ src/lib/api.ts      Typed wrappers: auth.test, conversations.list, users.list, u
 src/lib/scan.ts     Walks history + replies, collects your own messages
 src/lib/deleter.ts  Delete queue: messages (replies before roots, newest first), then files; per-failure classification
 src/lib/export.ts   CSV and JSON for the staged list and the run results; joins message text onto results
-src/components/MessageList.tsx  Windowed list — pinned row heights, prefix-sum offsets, binary-searched window
+src/components/MessageList.tsx  Windowed list — fixed inline row heights, prefix-sum offsets, binary-searched window
 src/lib/router.ts   Hash subscription and writes; announces its own pushState/replaceState
 src/lib/route.ts    Pure URL <-> view state, plus the clamp that refuses unrestorable routes
 src/i18n/           Hand-rolled translations; ko.tsx defines the type every other language must match
-src/App.tsx         Step state machine
+src/App.tsx         Screen wiring: derives the step from the route, runs the scan and the delete queue
 vite.config.ts      The CSP, written once and emitted as both a meta tag and a _headers file
 ```
 
