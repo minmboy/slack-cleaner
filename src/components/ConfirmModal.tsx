@@ -3,6 +3,8 @@ import { useI18n } from '../i18n/context'
 
 interface Props {
   total: number
+  /** How many staged messages have an attachment that will outlive them. */
+  withFiles: number
   perChannel: { channelId: string; label: string; count: number }[]
   dryRun: boolean
   onDryRunChange: (value: boolean) => void
@@ -10,7 +12,7 @@ interface Props {
   onStart: () => void
 }
 
-export function ConfirmModal({ total, perChannel, dryRun, onDryRunChange, onCancel, onStart }: Props) {
+export function ConfirmModal({ total, withFiles, perChannel, dryRun, onDryRunChange, onCancel, onStart }: Props) {
   const { t, n } = useI18n()
   const [typed, setTyped] = useState('')
   const armed = dryRun || typed.trim().toLowerCase() === t.confirm.phrase.toLowerCase()
@@ -37,6 +39,10 @@ export function ConfirmModal({ total, perChannel, dryRun, onDryRunChange, onCanc
               </tbody>
             </table>
           </div>
+
+          {withFiles > 0 && (
+            <p className="note warn">{t.confirm.filesNote(<b>{t.confirm.filesCount(n(withFiles))}</b>)}</p>
+          )}
 
           <p className="hint" style={{ marginBottom: 14 }}>
             {t.confirm.estimate(<b>{t.confirm.minutes(n(estimateMin))}</b>)}

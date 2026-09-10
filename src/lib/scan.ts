@@ -12,10 +12,34 @@ import type { Conversation, ScanProgress, TargetMessage } from './types'
 const PAGE_SIZE = 200
 
 /**
- * Subtypes a user can delete as their own message. Anything absent here is a
- * system/bot event; `chat.delete` stays the authority, this just avoids noise.
+ * Subtypes that are workspace events rather than something the user wrote, even
+ * though Slack attributes them to a `user`. Everything else is let through.
+ *
+ * This is a denylist on purpose. An allowlist drops any subtype it has not heard
+ * of — including new ones Slack adds — which would silently shrink the cleanup
+ * while still reporting it complete. `chat.delete` is the real authority on what
+ * may go, and a refusal is recorded as `cant_delete_message` rather than being
+ * hidden.
  */
-const DELETABLE_SUBTYPES = new Set(['me_message', 'thread_broadcast', 'file_share', 'file_comment'])
+const SYSTEM_SUBTYPES = new Set([
+  'channel_join',
+  'channel_leave',
+  'channel_topic',
+  'channel_purpose',
+  'channel_name',
+  'channel_archive',
+  'channel_unarchive',
+  'group_join',
+  'group_leave',
+  'group_topic',
+  'group_purpose',
+  'group_name',
+  'group_archive',
+  'group_unarchive',
+  'bot_message',
+  'tombstone',
+  'ekm_access_denied',
+])
 
 interface RawMessage {
   type?: string
@@ -29,11 +53,11 @@ interface RawMessage {
   files?: unknown[]
 }
 
-function isMine(raw: RawMessage, myUserId: string): boolean {
+export function isMine(raw: RawMessage, myUserId: string): boolean {
   if (raw.type !== 'message') return false
   if (raw.user !== myUserId) return false
   if (raw.bot_id) return false
-  if (raw.subtype && !DELETABLE_SUBTYPES.has(raw.subtype)) return false
+  if (raw.subtype && SYSTEM_SUBTYPES.has(raw.subtype)) return false
   return true
 }
 

@@ -153,7 +153,16 @@ curl -sD - -o /dev/null https://minmboy.github.io/slack-cleaner/ | grep -i conte
   This tool records that rather than working around it.
 - This is the same action as deleting in the Slack UI. Records **may survive in your company's export,
   Discovery, or retention backups.**
-- **Attached files are not deleted.** That needs `files.delete` and the `files:write` scope.
+- **Attached files are not deleted.** `chat.delete` removes the message; the file is a separate object
+  with its own `files.delete` method and its own delete action in the Slack UI. Whether a file ever goes
+  away depends on a workspace setting you cannot see. Where file retention is aligned to message
+  retention, Slack ["will keep all files until any messages that shared them are deleted"](https://slack.com/help/articles/203457187-Customize-data-retention-in-Slack),
+  after which files with no shares get a 30-day grace period and are then permanently deleted. Where it
+  is not aligned, the file simply stays — listed under your Files and reachable by its permalink to
+  anyone who already had access. The confirm screen tells you how many staged messages carry an
+  attachment so this is visible before you commit, not afterwards.
+- **Private channels and group DMs you have left are unreachable.** You are no longer a member, so they
+  are neither listed nor readable. Rejoin to clean one up, or accept that those messages stay.
 - Setting a scan start date filters `conversations.history` by *root* timestamp, so replies you wrote
   inside a thread that started before the cutoff are not found. Leave the date empty for a complete
   sweep.

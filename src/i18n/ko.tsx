@@ -267,6 +267,13 @@ settings:
       <>Slack rate limit(분당 50회) 때문에 약 {minutes} 걸립니다. 탭을 열어 둔 채로 두세요.</>
     ),
     minutes: (count: string) => `${count}분`,
+    filesNote: (count: ReactNode): ReactNode => (
+      <>
+        이 중 {count}개에 첨부파일이 있습니다. <b>메시지를 지워도 파일은 Slack에 남습니다</b> — 파일은 Slack에서
+        따로 삭제해야 합니다.
+      </>
+    ),
+    filesCount: (count: string) => `${count}개`,
     dryRun: '연습 실행 — 실제로 지우지 않고 순서와 대상만 확인',
     typePrompt: (phrase: ReactNode): ReactNode => <>진행하려면 {phrase} 를 입력하세요</>,
     cancel: '취소',

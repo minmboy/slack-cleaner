@@ -266,6 +266,13 @@ settings:
       </>
     ),
     minutes: (count: string) => `${count} min`,
+    filesNote: (count: ReactNode): ReactNode => (
+      <>
+        {count} of these carry attachments. <b>Deleting a message does not delete its file</b> — the files stay
+        in Slack and have to be removed separately.
+      </>
+    ),
+    filesCount: (count: string) => `${count}`,
     dryRun: 'Dry run — check the order and targets without deleting anything',
     typePrompt: (phrase: ReactNode): ReactNode => <>Type {phrase} to proceed</>,
     cancel: 'Cancel',

@@ -328,6 +328,9 @@ export default function App() {
 
   const staged = useMemo(() => targets.filter((target) => !excluded.has(keyOf(target))), [targets, excluded])
 
+  /** Messages whose deletion leaves a file behind; surfaced on the confirm screen. */
+  const stagedWithFiles = useMemo(() => staged.filter((target) => target.hasFiles).length, [staged])
+
   const perChannel = useMemo(() => {
     const counts = new Map<string, number>()
     for (const target of staged) counts.set(target.channelId, (counts.get(target.channelId) ?? 0) + 1)
@@ -527,6 +530,7 @@ export default function App() {
       {confirmOpen && (
         <ConfirmModal
           total={staged.length}
+          withFiles={stagedWithFiles}
           perChannel={perChannel}
           dryRun={dryRun}
           onDryRunChange={setDryRun}
