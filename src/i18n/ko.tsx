@@ -54,6 +54,19 @@ export const ko = {
     backToSelect: '대화 다시 선택',
   },
 
+  export: {
+    listLabel: '목록 내보내기',
+    resultsLabel: '결과 내보내기',
+    csv: 'CSV',
+    json: 'JSON',
+    containsText: (
+      <>
+        내보낸 파일에는 <b>메시지 본문이 그대로 들어갑니다.</b> 삭제 전 백업으로 쓰기 좋지만, 그만큼 파일 자체를 안전한
+        곳에 두세요.
+      </>
+    ),
+  },
+
   ui: {
     copy: '복사',
     copied: '복사됨',
@@ -247,6 +260,8 @@ settings:
     deselectFiltered: '필터 결과 전체 해제',
     selectAll: '전체 선택',
     deselectAll: '전체 해제',
+    listLabel: '삭제 대상 메시지 목록',
+    listPosition: (from: string, to: string, total: string) => `${from}–${to} / ${total}`,
     emptyNone: '조건에 맞는 메시지가 없습니다.',
     groupSelect: '선택',
     groupDeselect: '해제',
@@ -254,7 +269,6 @@ settings:
     badgeParent: '원본',
     badgeFiles: '첨부',
     noText: '(본문 없음)',
-    showMore: (count: string) => `${count}개 더 보기`,
     backToSelect: '대화 다시 선택',
     pending: (count: ReactNode): ReactNode => <>삭제 예정 {count}개</>,
     proceed: '삭제 진행',
@@ -292,7 +306,6 @@ settings:
     titleDryDone: '연습 실행 완료',
     titleDone: '완료',
     stop: '중단',
-    exportCsv: '결과 CSV 내려받기',
     statTarget: '대상',
     statDeleted: '삭제됨',
     statAlreadyGone: '이미 없음',

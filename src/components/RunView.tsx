@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { useI18n } from '../i18n/context'
+import { resultsExport } from '../lib/export'
 import type { DeleteResult, TargetMessage } from '../lib/types'
+import { ExportButtons } from './ExportButtons'
 import { Bar, Stat } from './ui'
 
 interface Props {
@@ -11,6 +13,8 @@ interface Props {
   aborted: string | null
   rateLimitRemaining: number
   labels: Map<string, string>
+  /** Joined into the export so it carries the text of every message removed. */
+  targets: TargetMessage[]
   remaining: TargetMessage[]
   onStop: () => void
   onRetryFailed: () => void
@@ -25,6 +29,7 @@ export function RunView({
   aborted,
   rateLimitRemaining,
   labels,
+  targets,
   remaining,
   onStop,
   onRetryFailed,
@@ -53,45 +58,6 @@ export function RunView({
     return rows.filter((result) => result.outcome === 'deleted' || result.outcome === 'skipped').length
   }, [results])
 
-  function exportLog() {
-    // Quote every cell: channel labels are display names and error codes can be
-    // transport messages, either of which may contain a comma or a quote.
-    const cell = (value: string) => `"${value.replace(/"/g, '""')}"`
-    const rows = [
-      ['kind', 'channel_id', 'channel_label', 'target_id', 'target_label', 'outcome', 'error_code']
-        .map(cell)
-        .join(','),
-      ...results.map((result) =>
-        [
-          result.kind,
-          result.channelId,
-          labels.get(result.channelId) ?? '',
-          result.id,
-          result.label ?? '',
-          result.outcome,
-          result.errorCode ?? '',
-        ]
-          .map(cell)
-          .join(','),
-      ),
-    ]
-    // The BOM keeps Excel from mangling non-ASCII names in the label column.
-    const blob = new Blob([`\ufeff${rows.join('\r\n')}`], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `slack-cleanup-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}.csv`
-    anchor.style.display = 'none'
-    // A detached anchor plus a same-task revoke can leave the browser with
-    // nothing to fetch, so attach first and release on the next turn.
-    document.body.appendChild(anchor)
-    anchor.click()
-    setTimeout(() => {
-      anchor.remove()
-      URL.revokeObjectURL(url)
-    }, 0)
-  }
-
   const title = running
     ? dryRun
       ? t.run.titleDryRunning
@@ -110,9 +76,12 @@ export function RunView({
             {t.run.stop}
           </button>
         ) : (
-          <button className="btn ghost sm" onClick={exportLog} disabled={results.length === 0}>
-            {t.run.exportCsv}
-          </button>
+          <ExportButtons
+            label={t.export.resultsLabel}
+            kind="results"
+            disabled={results.length === 0}
+            build={(format) => resultsExport(results, targets, labels, format)}
+          />
         )}
       </header>
 

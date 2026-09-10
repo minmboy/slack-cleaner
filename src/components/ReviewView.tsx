@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useI18n } from '../i18n/context'
+import { reviewExport } from '../lib/export'
 import { keyOf } from '../lib/format'
 import type { TargetMessage } from '../lib/types'
+import { ExportButtons } from './ExportButtons'
+import { MessageList } from './MessageList'
 
 interface Props {
   targets: TargetMessage[]
@@ -23,14 +26,9 @@ interface Filters {
 
 const EMPTY_FILTERS: Filters = { text: '', from: '', to: '', onlyThreads: false, onlyFiles: false }
 
-/** How many messages to render per channel before the "show more" button. Keeps huge scans responsive. */
-const PAGE = 120
-
 export function ReviewView({ targets, labels, excluded, onExcludedChange, onBack, onConfirm }: Props) {
-  const { t, n, formatTime } = useI18n()
+  const { t, n } = useI18n()
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const [shown, setShown] = useState<Map<string, number>>(new Map())
 
   const filtered = useMemo(() => {
     const needle = filters.text.trim().toLowerCase()
@@ -63,25 +61,33 @@ export function ReviewView({ targets, labels, excluded, onExcludedChange, onBack
   const selectedCount = targets.length - excluded.size
   const filteredSelected = filtered.reduce((sum, target) => (excluded.has(keyOf(target)) ? sum : sum + 1), 0)
 
-  function setBulk(items: TargetMessage[], select: boolean) {
-    const next = new Set(excluded)
-    for (const target of items) {
-      if (select) next.delete(keyOf(target))
-      else next.add(keyOf(target))
-    }
-    onExcludedChange(next)
-  }
+  const setBulk = useCallback(
+    (items: TargetMessage[], select: boolean) => {
+      const next = new Set(excluded)
+      for (const target of items) {
+        if (select) next.delete(keyOf(target))
+        else next.add(keyOf(target))
+      }
+      onExcludedChange(next)
+    },
+    [excluded, onExcludedChange],
+  )
 
-  function toggleOne(target: TargetMessage) {
-    const next = new Set(excluded)
-    const key = keyOf(target)
-    if (next.has(key)) next.delete(key)
-    else next.add(key)
-    onExcludedChange(next)
-  }
+  const toggleOne = useCallback(
+    (target: TargetMessage) => {
+      const next = new Set(excluded)
+      const key = keyOf(target)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      onExcludedChange(next)
+    },
+    [excluded, onExcludedChange],
+  )
 
   // Derived from the inputs, not from the result count: a filter that happens to
   // match everything is still active, and the reset button has to stay reachable.
+  const staged = useMemo(() => targets.filter((target) => !excluded.has(keyOf(target))), [targets, excluded])
+
   const filterActive =
     filters.text.trim() !== '' ||
     filters.from !== '' ||
@@ -105,6 +111,7 @@ export function ReviewView({ targets, labels, excluded, onExcludedChange, onBack
           <p className="note">
             {t.review.intro(<kbd>{t.review.badgeReply}</kbd>, <kbd>{t.review.badgeParent}</kbd>)}
           </p>
+          <p className="note warn">{t.export.containsText}</p>
 
           <div className="row" style={{ marginBottom: 10 }}>
             <input
@@ -168,79 +175,22 @@ export function ReviewView({ targets, labels, excluded, onExcludedChange, onBack
           <button className="btn ghost sm" onClick={() => setBulk(filtered, false)}>
             {filterActive ? t.review.deselectFiltered : t.review.deselectAll}
           </button>
+          <ExportButtons
+            label={t.export.listLabel}
+            kind="review"
+            disabled={staged.length === 0}
+            build={(format) => reviewExport(staged, labels, format)}
+          />
         </div>
 
-        <div className="list" style={{ maxHeight: 620 }}>
-          {groups.length === 0 && <div className="empty">{t.review.emptyNone}</div>}
-
-          {groups.map(([channelId, items]) => {
-            const isCollapsed = collapsed.has(channelId)
-            const limit = shown.get(channelId) ?? PAGE
-            const groupSelected = items.reduce((sum, item) => (excluded.has(keyOf(item)) ? sum : sum + 1), 0)
-
-            return (
-              <div className="msg-group" key={channelId}>
-                <div
-                  className="msg-group-head"
-                  onClick={() => {
-                    const next = new Set(collapsed)
-                    if (next.has(channelId)) next.delete(channelId)
-                    else next.add(channelId)
-                    setCollapsed(next)
-                  }}
-                >
-                  <span style={{ color: 'var(--text-faint)', fontFamily: 'var(--mono)', fontSize: 10 }}>
-                    {isCollapsed ? '▸' : '▾'}
-                  </span>
-                  <span className="title">{labels.get(channelId) ?? channelId}</span>
-                  <span className="count">
-                    {n(groupSelected)} / {n(items.length)}
-                  </span>
-                  <button
-                    className="btn ghost sm"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      setBulk(items, groupSelected !== items.length)
-                    }}
-                  >
-                    {groupSelected === items.length ? t.review.groupDeselect : t.review.groupSelect}
-                  </button>
-                </div>
-
-                {!isCollapsed &&
-                  items.slice(0, limit).map((target) => {
-                    const key = keyOf(target)
-                    const on = !excluded.has(key)
-                    return (
-                      <label className="msg-row" key={key} data-on={on}>
-                        <input type="checkbox" checked={on} onChange={() => toggleOne(target)} />
-                        <span className="when">{formatTime(target.time)}</span>
-                        <span className="body">
-                          {target.threadTs && <span className="badge">{t.review.badgeReply}</span>}
-                          {target.isThreadParent && <span className="badge">{t.review.badgeParent}</span>}
-                          {target.hasFiles && <span className="badge">{t.review.badgeFiles}</span>}
-                          {target.text.trim() || (
-                            <em style={{ color: 'var(--text-faint)' }}>{t.review.noText}</em>
-                          )}
-                        </span>
-                      </label>
-                    )
-                  })}
-
-                {!isCollapsed && items.length > limit && (
-                  <div style={{ padding: '9px 18px', borderTop: '1px solid var(--line)' }}>
-                    <button
-                      className="btn ghost sm"
-                      onClick={() => setShown(new Map(shown).set(channelId, limit + PAGE * 4))}
-                    >
-                      {t.review.showMore(n(items.length - limit))}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+        <MessageList
+          groups={groups}
+          labels={labels}
+          excluded={excluded}
+          onToggle={toggleOne}
+          onBulk={setBulk}
+          empty={t.review.emptyNone}
+        />
       </section>
 
       <div className="sticky-foot">

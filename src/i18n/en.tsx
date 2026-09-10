@@ -48,6 +48,19 @@ export const en: Strings = {
     backToSelect: 'Pick conversations again',
   },
 
+  export: {
+    listLabel: 'Export list',
+    resultsLabel: 'Export results',
+    csv: 'CSV',
+    json: 'JSON',
+    containsText: (
+      <>
+        The exported file contains <b>your message text, verbatim.</b> That makes it a useful backup to take
+        before deleting — and a file worth keeping somewhere safe.
+      </>
+    ),
+  },
+
   ui: {
     copy: 'Copy',
     copied: 'Copied',
@@ -243,6 +256,8 @@ settings:
     deselectFiltered: 'Deselect all filtered',
     selectAll: 'Select all',
     deselectAll: 'Deselect all',
+    listLabel: 'Messages staged for deletion',
+    listPosition: (from: string, to: string, total: string) => `${from}–${to} of ${total}`,
     emptyNone: 'No messages match.',
     groupSelect: 'Select',
     groupDeselect: 'Deselect',
@@ -250,7 +265,6 @@ settings:
     badgeParent: 'root',
     badgeFiles: 'file',
     noText: '(no text)',
-    showMore: (count: string) => `Show ${count} more`,
     backToSelect: 'Pick conversations again',
     pending: (count: ReactNode): ReactNode => <>{count} staged for deletion</>,
     proceed: 'Delete these',
@@ -291,7 +305,6 @@ settings:
     titleDryDone: 'Dry run complete',
     titleDone: 'Done',
     stop: 'Stop',
-    exportCsv: 'Download results as CSV',
     statTarget: 'Targets',
     statDeleted: 'Deleted',
     statAlreadyGone: 'Already gone',

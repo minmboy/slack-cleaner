@@ -527,6 +527,7 @@ export default function App() {
           aborted={aborted}
           rateLimitRemaining={rateLimitRemaining}
           labels={labels}
+          targets={targets}
           remaining={remaining}
           onStop={() => abortRef.current?.abort()}
           onRetryFailed={retryFailed}

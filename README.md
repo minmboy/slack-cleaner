@@ -68,8 +68,8 @@ If responses start coming back 15 at a time, the app flags it as the throttled c
 | Connect | Copy the app manifest → create and install the app → paste the `xoxp-` User Token → `auth.test` |
 | Pick conversations | `conversations.list` plus `users.list` (names resolve in the background). Optional start date narrows the scan |
 | Scan | `conversations.history`, then `conversations.replies` for every message with `reply_count > 0`. Keeps only messages where `user` matches your own ID |
-| Review | A checkbox per message. Filter by date, keyword, thread, or attachment; select or clear whole conversations |
-| Delete | Type the confirmation word → `chat.delete`, one call per message, then `files.delete` for attachments if you opted in. Progress, per-item failure reasons, CSV export |
+| Review | A checkbox per message, windowed so a scan of any size scrolls normally. Filter by date, keyword, thread, or attachment; select or clear whole conversations. Export the staged list as CSV or JSON — a backup taken before anything is deleted |
+| Delete | Type the confirmation word → `chat.delete`, one call per message, then `files.delete` for attachments if you opted in. Progress, per-item failure reasons, and an export carrying the text of every message removed |
 
 **Thread replies are deleted before their roots.** Deleting a root first leaves its replies stranded
 under a "message deleted" placeholder.
@@ -105,8 +105,9 @@ grep -rn "localStorage\|sessionStorage\|indexedDB\|document.cookie" src/
 - `localStorage` in [`src/i18n/`](src/i18n/) holds the language choice — `ko` or `en`, nothing else.
 - The remaining hits are the checkbox label in the translation files.
 
-No IndexedDB, no cookies. **Message contents are never stored anywhere** — scan results live in memory
-and disappear on reload.
+No IndexedDB, no cookies. **Message contents are never persisted by the app** — scan results live in memory
+and disappear on reload. The one way text leaves the browser is an export you click, which writes a file to
+your own disk; the review screen says so next to the button.
 
 **4. The browser enforces all of the above.** The policy is defined once in
 [`vite.config.ts`](vite.config.ts) and applied to the built page two ways — as a `<meta http-equiv>`
@@ -215,6 +216,8 @@ src/lib/slack.ts    CORS-shaped fetch, per-method rate limiting, 429 retry, curs
 src/lib/api.ts      Typed wrappers: auth.test, conversations.list, users.list, users.info, files.delete
 src/lib/scan.ts     Walks history + replies, collects your own messages
 src/lib/deleter.ts  Delete queue: messages (replies before roots, newest first), then files; per-failure classification
+src/lib/export.ts   CSV and JSON for the staged list and the run results; joins message text onto results
+src/components/MessageList.tsx  Windowed list — pinned row heights, prefix-sum offsets, binary-searched window
 src/i18n/           Hand-rolled translations; ko.tsx defines the type every other language must match
 src/App.tsx         Step state machine
 vite.config.ts      The CSP, written once and emitted as both a meta tag and a _headers file
