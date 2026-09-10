@@ -91,6 +91,14 @@ export default function App() {
   const [running, setRunning] = useState(false)
   const [aborted, setAborted] = useState<string | null>(null)
   const [history, setHistory] = useState<HistoryMap>({})
+  /** Files the current flow opted into, so a resumed run knows which are still owed. */
+  const [runFiles, setRunFiles] = useState<TargetFile[]>([])
+  /**
+   * For the time-left estimate: when the current run started, how many results it
+   * inherited, and when its latest result arrived. Timestamps are taken as events
+   * happen, so the estimate needs no clock of its own while rendering.
+   */
+  const [runClock, setRunClock] = useState({ startedAt: 0, base: 0, lastAt: 0 })
 
   const [rateLimitUntil, setRateLimitUntil] = useState(0)
   const [nowTick, setNowTick] = useState(Date.now())
@@ -204,6 +212,33 @@ export default function App() {
     (signal?: AbortSignal): CallContext => ({ token, signal, onRateLimit }),
     [token, onRateLimit],
   )
+
+  // A long run should not stop because the display went to sleep. The browser
+  // drops the lock whenever the tab is hidden, so take it again on return.
+  useEffect(() => {
+    if (!running || !('wakeLock' in navigator)) return
+    let lock: WakeLockSentinel | null = null
+    let active = true
+    const acquire = async () => {
+      try {
+        const next = await navigator.wakeLock.request('screen')
+        if (active) lock = next
+        else void next.release()
+      } catch {
+        // Denied, unsupported here, or the tab is hidden; the run carries on regardless.
+      }
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void acquire()
+    }
+    void acquire()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      active = false
+      document.removeEventListener('visibilitychange', onVisibility)
+      void lock?.release()
+    }
+  }, [running])
 
   /** Warn before a refresh throws away an in-flight delete run. */
   useEffect(() => {
@@ -425,6 +460,7 @@ export default function App() {
     setRunStarted(false)
     setRunDestructive(false)
     setResults([])
+    setRunFiles([])
     setDeleteFiles(false)
     goto({ step: 'scan' })
     setProgress(chosen.map((item) => ({
@@ -527,6 +563,8 @@ export default function App() {
       setRunDestructive(!dryRun)
       goto({ step: 'run' })
       setResults(keepPrior)
+      const startedAt = Date.now()
+      setRunClock({ startedAt, base: keepPrior.length, lastAt: startedAt })
       setRunTotal(keepPrior.length + queue.length + files.length)
       setRunning(true)
       setAborted(null)
@@ -546,6 +584,7 @@ export default function App() {
                 deletedHere[result.channelId] = (deletedHere[result.channelId] ?? 0) + 1
               }
               setResults((prev) => [...prev, result])
+              setRunClock((clock) => ({ ...clock, lastAt: Date.now() }))
             },
           },
           makeCtx(controller.signal),
@@ -597,6 +636,22 @@ export default function App() {
     const doneKeys = new Set(results.filter((result) => result.kind === 'message').map(resultKey))
     return staged.filter((target) => !doneKeys.has(keyOf(target)))
   }, [results, staged])
+
+  const remainingFiles = useMemo(() => {
+    const done = new Set(results.filter((result) => result.kind === 'file').map((result) => result.id))
+    return runFiles.filter((file) => !done.has(file.id))
+  }, [results, runFiles])
+
+  /**
+   * Pause is an abort; resume is a new run over exactly what no run has reached,
+   * carrying every result so far. A request cut off mid-flight may already have
+   * landed at Slack — resuming then gets message_not_found, recorded as
+   * already_gone, so nothing is deleted twice and nothing is skipped.
+   */
+  const resumeRun = useCallback(() => {
+    if (remaining.length + remainingFiles.length === 0) return
+    void startDelete(remaining, remainingFiles, results)
+  }, [remaining, remainingFiles, results, startDelete])
 
   // ---------- render ----------
 
@@ -757,7 +812,12 @@ export default function App() {
           labels={scanLabels}
           targets={targets}
           remaining={remaining}
-          onStop={() => deleteAbortRef.current?.abort()}
+          remainingFiles={remainingFiles.length}
+          startedAt={runClock.startedAt}
+          lastAt={runClock.lastAt}
+          base={runClock.base}
+          onPause={() => deleteAbortRef.current?.abort()}
+          onResume={resumeRun}
           onRetryFailed={retryFailed}
           onFinish={leaveRun}
         />
@@ -774,7 +834,11 @@ export default function App() {
           dryRun={dryRun}
           onDryRunChange={setDryRun}
           onCancel={() => setConfirmOpen(false)}
-          onStart={() => void startDelete(staged, deleteFiles ? stagedFiles : [])}
+          onStart={() => {
+            const files = deleteFiles ? stagedFiles : []
+            setRunFiles(files)
+            void startDelete(staged, files)
+          }}
         />
       )}
 

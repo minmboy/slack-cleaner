@@ -40,7 +40,8 @@ export function ConfirmModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [onCancel])
   const armed = dryRun || typed.trim().toLowerCase() === t.confirm.phrase.toLowerCase()
-  const estimateMin = Math.ceil(((total + (deleteFiles ? fileCount : 0)) * 1.3) / 60)
+  // About one call a second — the pace the client starts at (see slack.ts).
+  const estimateMin = Math.ceil((total + (deleteFiles ? fileCount : 0)) / 60)
 
   return (
     <div className="scrim" onClick={onCancel}>

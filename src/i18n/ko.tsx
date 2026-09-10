@@ -291,7 +291,7 @@ settings:
     phrase: '삭제',
     warning: (count: ReactNode): ReactNode => <>{count}개의 내 메시지를 삭제합니다. 되돌릴 수 없습니다.</>,
     estimate: (minutes: ReactNode): ReactNode => (
-      <>Slack rate limit(분당 50회) 때문에 약 {minutes} 걸립니다. 탭을 열어 둔 채로 두세요.</>
+      <>Slack 속도 제한(분당 최대 60회) 때문에 약 {minutes} 걸립니다. 탭은 닫지 마세요 — 다른 탭으로 옮겨도 계속됩니다.</>
     ),
     minutes: (count: string) => `${count}분`,
     filesOptIn: (count: string) => `내가 올린 첨부파일 ${count}개도 함께 삭제`,
@@ -316,7 +316,15 @@ settings:
     titleRunning: '삭제 중',
     titleDryDone: '연습 실행 완료',
     titleDone: '완료',
-    stop: '중단',
+    titlePaused: '일시정지됨',
+    titleDryPaused: '연습 실행 일시정지됨',
+    pause: '일시정지',
+    resume: (count: string) => `이어서 삭제 · ${count}개 남음`,
+    eta: (left: string, rate: string) => `남은 시간 ${left} · 분당 ${rate}개`,
+    etaMinutes: (count: string) => `약 ${count}분`,
+    etaUnderMinute: '1분 미만',
+    keepOpen:
+      '탭은 닫지 마세요. 다른 탭으로 옮겨도 계속되지만, 탭을 닫거나 컴퓨터가 잠들면 멈춥니다. 멈추면 같은 대화를 다시 스캔해서 남은 것만 이어서 지울 수 있습니다.',
     statTarget: '대상',
     statDeleted: '삭제됨',
     statAlreadyGone: '이미 없음',

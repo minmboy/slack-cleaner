@@ -59,6 +59,19 @@ The client paces requests per method (Slack meters per method, per workspace) an
 the `Retry-After` header — which Slack does expose to JavaScript via `access-control-expose-headers`.
 If responses start coming back 15 at a time, the app flags it as the throttled case.
 
+Deletion runs at about one message a second — Slack's own design guidance — and widens the gap for the rest
+of the session the first time Slack answers 429. Sending in parallel would not help: the budget is per
+method, per workspace, per app, so concurrent requests only reach the wall sooner. A 2,000-message run
+takes a little over half an hour, and the app is built to survive that:
+
+- The waits between requests run in a Web Worker ([`src/lib/timer.ts`](src/lib/timer.ts)). Chrome checks
+  the timers of a tab hidden for more than five minutes only once a minute, which would turn one message a
+  second into one a minute the moment you switched tabs; worker timers are not throttled that way.
+- The screen is kept awake while a run is in flight, where the browser supports the Wake Lock API.
+- A run can be paused and resumed. Resuming picks up exactly the messages no run has reached yet.
+- If a run stops anyway — the tab closed, the computer slept — scanning the same conversations again finds
+  only what is left, and the picker's history shows where you got to.
+
 ---
 
 ## How it works
@@ -152,6 +165,9 @@ curl -sD - -o /dev/null https://minmboy.github.io/slack-message-manager/ | grep 
 - Only messages where `message.user` equals the `user_id` from `auth.test` are ever collected.
   `chat.delete` is the final authority on what may actually be removed.
 - **Dry run** walks the whole queue and reports targets and ordering without deleting anything.
+- **Pause** is always one click away during a run, and **Resume** continues with only what is left. A
+  request cut off mid-flight may already have reached Slack; resuming then gets `message_not_found`, recorded
+  as already gone, so nothing is deleted twice.
 - **File deletion is off by default.** It runs as a second phase, after the messages, and only when you
   tick the box — with the "removes it everywhere it was shared" warning next to it.
 - The delete button stays disabled until you type the confirmation word.
@@ -241,7 +257,8 @@ links back to them in the meantime.
 ## Layout
 
 ```
-src/lib/slack.ts    CORS-shaped fetch, per-method rate limiting, 429 retry, cursor pagination
+src/lib/slack.ts    CORS-shaped fetch, per-method adaptive rate limiting, 429 retry, cursor pagination
+src/lib/timer.ts    Sleep backed by a Web Worker, so background tabs keep their pace
 src/lib/api.ts      Typed wrappers: auth.test, conversations.list, users.list, users.info, files.delete
 src/lib/scan.ts     Walks history + replies, collects your own messages
 src/lib/deleter.ts  Delete queue: messages (replies before roots, newest first), then files; per-failure classification

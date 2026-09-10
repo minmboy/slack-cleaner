@@ -14,13 +14,17 @@
  *    `access-control-expose-headers`, so we can read it from JS on a 429.
  */
 
+import { sleep } from './timer'
+
 const API_BASE = 'https://slack.com/api/'
 
 /** Minimum ms between request *starts* for each Slack rate-limit tier. */
 const TIER_INTERVAL_MS: Record<number, number> = {
   1: 60_000, // 1+/min
   2: 3_200, // 20+/min
-  3: 1_300, // 50+/min
+  // Slack's guidance is to design for about one request a second; Tier 3 allows
+  // 50+ a minute with sporadic bursts. Start there and slow down on the first 429.
+  3: 1_000, // 50+/min
   4: 700, // 100+/min
 }
 
@@ -57,19 +61,6 @@ export class SlackTransportError extends Error {
   }
 }
 
-const sleep = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) return reject(new DOMException('Aborted', 'AbortError'))
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
-    const onAbort = () => {
-      clearTimeout(timer)
-      reject(new DOMException('Aborted', 'AbortError'))
-    }
-    signal?.addEventListener('abort', onAbort, { once: true })
-  })
 
 /**
  * Serializes *acquisition* of a slot so request starts are spaced by `interval`.
@@ -78,10 +69,12 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 class TierGate {
   private nextAt = 0
   private tail: Promise<void> = Promise.resolve()
-  private readonly interval: number
+  private interval: number
+  private readonly ceiling: number
 
   constructor(interval: number) {
     this.interval = interval
+    this.ceiling = interval * 3
   }
 
   async acquire(signal?: AbortSignal): Promise<void> {
@@ -98,6 +91,14 @@ class TierGate {
   /** Push the next allowed start out, after Slack tells us to back off. */
   penalize(ms: number): void {
     this.nextAt = Math.max(this.nextAt, Date.now() + ms)
+  }
+
+  /**
+   * Slack answered 429, so this pace is above what it will sustain here. Widen
+   * the gap for the rest of the session instead of hitting the wall every burst.
+   */
+  slowDown(): void {
+    this.interval = Math.min(this.ceiling, Math.round(this.interval * 1.25))
   }
 }
 
@@ -167,6 +168,7 @@ export async function slackCall<T = SlackOk>(
     if (response.status === 429) {
       const header = Number(response.headers.get('retry-after'))
       const waitMs = (Number.isFinite(header) && header > 0 ? header : 30) * 1_000 + 500
+      gate.slowDown()
       gate.penalize(waitMs)
       ctx.onRateLimit?.({ method, waitMs })
       await sleep(waitMs, ctx.signal)
@@ -193,6 +195,7 @@ export async function slackCall<T = SlackOk>(
     const code = typeof payload.error === 'string' ? payload.error : 'unknown_error'
     if (TRANSIENT_CODES.has(code) && attempt < MAX_ATTEMPTS) {
       const waitMs = code === 'ratelimited' ? 30_000 : 1_000 * 2 ** (attempt - 1)
+      if (code === 'ratelimited') gate.slowDown()
       gate.penalize(waitMs)
       if (code === 'ratelimited') ctx.onRateLimit?.({ method, waitMs })
       await sleep(waitMs, ctx.signal)

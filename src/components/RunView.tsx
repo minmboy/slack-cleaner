@@ -15,11 +15,22 @@ interface Props {
   labels: Map<string, string>
   /** Joined into the export so it carries the text of every message removed. */
   targets: TargetMessage[]
+  /** Staged messages this flow has not processed yet. */
   remaining: TargetMessage[]
-  onStop: () => void
+  /** Opted-in files this flow has not processed yet. */
+  remainingFiles: number
+  /** When the current run started, when its latest result arrived, and how many results it inherited. */
+  startedAt: number
+  lastAt: number
+  base: number
+  onPause: () => void
+  onResume: () => void
   onRetryFailed: () => void
   onFinish: () => void
 }
+
+/** Below this many results the pace is a guess, so the estimate uses Slack's one-a-second. */
+const SAMPLE = 5
 
 export function RunView({
   total,
@@ -31,7 +42,12 @@ export function RunView({
   labels,
   targets,
   remaining,
-  onStop,
+  remainingFiles,
+  startedAt,
+  lastAt,
+  base,
+  onPause,
+  onResume,
   onRetryFailed,
   onFinish,
 }: Props) {
@@ -58,13 +74,34 @@ export function RunView({
     return rows.filter((result) => result.outcome === 'deleted' || result.outcome === 'skipped').length
   }, [results])
 
+  /** What a resume would pick up: everything staged that no run has reached yet. */
+  const left = remaining.length + remainingFiles
+  const paused = !running && left > 0
+
+  /**
+   * Time left, from the pace this run has actually managed — rate limits and
+   * slow responses included — rather than from a nominal rate.
+   */
+  const eta = useMemo(() => {
+    if (!running) return null
+    const done = results.length - base
+    const perItem = done >= SAMPLE ? (lastAt - startedAt) / done : 1_000
+    const leftMs = left * perItem
+    const leftText = leftMs < 60_000 ? t.run.etaUnderMinute : t.run.etaMinutes(n(Math.ceil(leftMs / 60_000)))
+    return t.run.eta(leftText, n(Math.round(60_000 / perItem)))
+  }, [running, results.length, base, startedAt, lastAt, left, t, n])
+
   const title = running
     ? dryRun
       ? t.run.titleDryRunning
       : t.run.titleRunning
-    : dryRun
-      ? t.run.titleDryDone
-      : t.run.titleDone
+    : paused
+      ? dryRun
+        ? t.run.titleDryPaused
+        : t.run.titlePaused
+      : dryRun
+        ? t.run.titleDryDone
+        : t.run.titleDone
 
   return (
     <>
@@ -72,11 +109,7 @@ export function RunView({
         <header className="panel-head">
           <h2>{title}</h2>
           <div className="spacer" />
-          {running ? (
-            <button className="btn ghost sm" onClick={onStop}>
-              {t.run.stop}
-            </button>
-          ) : (
+          {!running && (
             <ExportButtons
               label={t.export.resultsLabel}
               kind="results"
@@ -117,6 +150,12 @@ export function RunView({
             {filesDeleted !== null && <Stat label={t.run.statFiles} value={n(filesDeleted)} tone="ok" />}
           </div>
 
+          {running && (
+            <p className="note" style={{ marginTop: 14, marginBottom: 0 }}>
+              {t.run.keepOpen}
+            </p>
+          )}
+
           {rateLimitRemaining > 0 && (
             <p className="note warn" style={{ marginTop: 14, marginBottom: 0 }}>
               {t.run.rateLimitNote(<b>{t.run.seconds(rateLimitRemaining)}</b>)}
@@ -125,7 +164,7 @@ export function RunView({
 
           {aborted && (
             <p className="note danger" style={{ marginTop: 14, marginBottom: 0 }}>
-              {t.run.abortedNote(<b>{aborted}</b>, n(remaining.length))}
+              {t.run.abortedNote(<b>{aborted}</b>, n(left))}
             </p>
           )}
 
@@ -134,7 +173,6 @@ export function RunView({
               {t.run.notAllowedNote(n(tally.not_allowed), <code className="inline">cant_delete_message</code>)}
             </p>
           )}
-
         </div>
 
         {problems.length > 0 && (
@@ -165,20 +203,34 @@ export function RunView({
         )}
       </section>
 
-      {/* The way out, where every other screen keeps its main action. */}
-      {!running && (
-        <div className="sticky-foot">
-          <div className="summary hint">{t.run.leaveHint}</div>
-          {retryable > 0 && (
-            <button className="btn ghost" onClick={onRetryFailed}>
-              {t.run.retryFailed(n(retryable))}
+      {/* Every screen keeps its main action here: pause while running, then resume or leave. */}
+      <div className="sticky-foot">
+        {running ? (
+          <>
+            <div className="summary hint">{eta}</div>
+            <button className="btn primary" onClick={onPause}>
+              {t.run.pause}
             </button>
-          )}
-          <button className="btn primary" onClick={onFinish}>
-            {t.app.backToSelect}
-          </button>
-        </div>
-      )}
+          </>
+        ) : (
+          <>
+            <div className="summary hint">{t.run.leaveHint}</div>
+            {retryable > 0 && (
+              <button className="btn ghost" onClick={onRetryFailed}>
+                {t.run.retryFailed(n(retryable))}
+              </button>
+            )}
+            <button className={paused ? 'btn ghost' : 'btn primary'} onClick={onFinish}>
+              {t.app.backToSelect}
+            </button>
+            {paused && (
+              <button className="btn primary" onClick={onResume}>
+                {t.run.resume(n(left))}
+              </button>
+            )}
+          </>
+        )}
+      </div>
     </>
   )
 }

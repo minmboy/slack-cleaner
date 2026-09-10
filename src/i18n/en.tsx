@@ -289,7 +289,7 @@ settings:
     ),
     estimate: (minutes: ReactNode): ReactNode => (
       <>
-        Slack's rate limit (50 per minute) means this takes about {minutes}. Leave the tab open.
+        Slack's rate limit (up to 60 a minute) means this takes about {minutes}. Keep the tab open — it can sit in the background.
       </>
     ),
     minutes: (count: string) => `${count} min`,
@@ -315,7 +315,15 @@ settings:
     titleRunning: 'Deleting',
     titleDryDone: 'Dry run complete',
     titleDone: 'Done',
-    stop: 'Stop',
+    titlePaused: 'Paused',
+    titleDryPaused: 'Dry run paused',
+    pause: 'Pause',
+    resume: (count: string) => `Resume · ${count} left`,
+    eta: (left: string, rate: string) => `${left} left · ${rate}/min`,
+    etaMinutes: (count: string) => `About ${count} min`,
+    etaUnderMinute: 'Under a minute',
+    keepOpen:
+      'Keep this tab open. It carries on in the background, but closing the tab or letting the computer sleep stops it. If that happens, scan the same conversations again and only what is left gets deleted.',
     statTarget: 'Targets',
     statDeleted: 'Deleted',
     statAlreadyGone: 'Already gone',
