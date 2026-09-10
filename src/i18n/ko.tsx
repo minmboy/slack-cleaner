@@ -14,7 +14,7 @@ export const ko = {
   langName: '한국어',
 
   app: {
-    title: 'Slack 메시지 정리',
+    title: 'Slack 메시지 관리',
     badge: '서버 전송 없음 · 브라우저에서만 처리',
     badgeTip:
       '토큰과 메시지 내용이 이 브라우저를 벗어나지 않습니다. 모든 요청은 이 페이지에서 slack.com으로 직접 전송되며, 중간 서버가 없습니다.',
@@ -120,8 +120,8 @@ export const ko = {
     ),
 
     manifest: `display_information:
-  name: My Message Cleaner
-  description: 내 Slack 메시지 정리 도구
+  name: My Message Manager
+  description: 내 Slack 메시지 관리 도구
   background_color: "#131110"
 oauth_config:
   scopes:

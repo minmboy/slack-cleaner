@@ -2,7 +2,7 @@
  * Hash routing, hand-rolled.
  *
  * Why the hash and not the History API: this ships to GitHub Pages at
- * `/slack-cleaner/`, which cannot rewrite unknown paths, so `/review` would 404
+ * `/slack-message-manager/`, which cannot rewrite unknown paths, so `/review` would 404
  * on refresh. A fragment also never reaches the server, so nothing in the URL
  * shows up in anyone's request logs — which matters for a page whose whole
  * argument is that your data does not leave the browser.

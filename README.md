@@ -1,12 +1,12 @@
-# Slack Message Cleanup
+# Slack Message Manager
 
-[![Deploy](https://github.com/minmboy/slack-cleaner/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/minmboy/slack-cleaner/actions/workflows/deploy-pages.yml)
+[![Deploy](https://github.com/minmboy/slack-message-manager/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/minmboy/slack-message-manager/actions/workflows/deploy-pages.yml)
 
 Manage your own Slack history: review what you have posted, then delete the messages — and optionally the
 files you attached — that you want gone. **There is no backend.** It builds to static files and talks to
 Slack directly from your browser.
 
-### → [minmboy.github.io/slack-cleaner](https://minmboy.github.io/slack-cleaner/)
+### → [minmboy.github.io/slack-message-manager](https://minmboy.github.io/slack-message-manager/)
 
 Or run it yourself, which is the stronger option for a tool you hand a token to:
 
@@ -129,10 +129,10 @@ anywhere else.** The browser refuses the connection. Check a live deployment eit
 
 ```bash
 # the meta tag, which every host preserves
-curl -s https://minmboy.github.io/slack-cleaner/ | grep -o 'http-equiv="Content-Security-Policy"[^>]*'
+curl -s https://minmboy.github.io/slack-message-manager/ | grep -o 'http-equiv="Content-Security-Policy"[^>]*'
 
 # the response header, on hosts that can set one (GitHub Pages cannot, so this is empty there)
-curl -sD - -o /dev/null https://minmboy.github.io/slack-cleaner/ | grep -i content-security-policy
+curl -sD - -o /dev/null https://minmboy.github.io/slack-message-manager/ | grep -i content-security-policy
 ```
 
 **5. You can watch it at runtime.** Keep the DevTools Network tab open and confirm that nothing but

@@ -7,7 +7,7 @@ export const en: Strings = {
   langName: 'English',
 
   app: {
-    title: 'Slack Message Cleanup',
+    title: 'Slack Message Manager',
     badge: 'No server · runs entirely in your browser',
     badgeTip:
       'Your token and message contents never leave this browser. Every request goes straight from this page to slack.com, with no server in between.',
@@ -115,8 +115,8 @@ export const en: Strings = {
     ),
 
     manifest: `display_information:
-  name: My Message Cleaner
-  description: Cleans up my own Slack messages
+  name: My Message Manager
+  description: Manages my own Slack messages
   background_color: "#131110"
 oauth_config:
   scopes:

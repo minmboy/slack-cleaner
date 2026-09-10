@@ -9,7 +9,7 @@ export const DICTS: Record<Lang, Strings> = { ko, en }
 export const LANGS = Object.keys(DICTS) as Lang[]
 
 /** The only thing this app puts in localStorage. Not sensitive; see README. */
-export const LANG_KEY = 'slack-cleaner:lang'
+export const LANG_KEY = 'slack-message-manager:lang'
 
 export interface I18nValue extends Formatters {
   lang: Lang

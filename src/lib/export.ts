@@ -57,10 +57,10 @@ export function downloadBlob(blob: Blob, filename: string): void {
 
 export type ExportFormat = 'csv' | 'json'
 
-/** `slack-cleanup-review-20260910T053400.csv` */
+/** `slack-message-manager-review-20260910T053400.csv` */
 export function exportFilename(kind: 'review' | 'results', format: ExportFormat, now: Date): string {
   const stamp = now.toISOString().slice(0, 19).replace(/[:-]/g, '')
-  return `slack-cleanup-${kind}-${stamp}.${format}`
+  return `slack-message-manager-${kind}-${stamp}.${format}`
 }
 
 const iso = (ms: number) => new Date(ms).toISOString()
@@ -102,7 +102,7 @@ export function reviewExport(
 ): Blob {
   if (format === 'json') {
     const payload = {
-      kind: 'slack-cleanup-review',
+      kind: 'slack-message-manager-review',
       messageCount: staged.length,
       messages: staged.map((target) => ({
         channelId: target.channelId,
@@ -185,7 +185,7 @@ export function resultsExport(
 
   if (format === 'json') {
     const payload = {
-      kind: 'slack-cleanup-results',
+      kind: 'slack-message-manager-results',
       total: results.length,
       results: results.map((result) => {
         const target = lookup(result)

@@ -24,7 +24,7 @@ import { keyOf, resultKey } from './lib/format'
 import { canonicalKinds, formatRoute, parseRoute, resolveStep, STEP_IDS, type Step } from './lib/route'
 import { readHash, subscribeHash, writeHash } from './lib/router'
 
-const TOKEN_KEY = 'slack-cleaner:token'
+const TOKEN_KEY = 'slack-message-manager:token'
 
 /** `mpdm-alice--bob--carol-1` → `alice, bob, carol` */
 function prettyMpim(name: string): string {
