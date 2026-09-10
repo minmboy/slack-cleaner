@@ -716,3 +716,20 @@ kbd, code.inline {
   color: inherit;
   cursor: default;
 }
+
+/* What this browser remembers about a conversation, beside its name. */
+.list-row .history {
+  display: inline-flex;
+  gap: 10px;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.list-row .history .deleted {
+  color: var(--ok);
+}
+.list-row[data-cleaned='true'] {
+  box-shadow: inset 2px 0 0 var(--ok);
+}

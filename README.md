@@ -94,7 +94,7 @@ grep -rn "fetch(\|XMLHttpRequest\|WebSocket\|sendBeacon" src/
 One hit: `fetch(API_BASE + method, ...)` in [`src/lib/slack.ts`](src/lib/slack.ts). `API_BASE` is
 pinned to `https://slack.com/api/` at the top of the same file.
 
-**3. Storage is limited to two keys.**
+**3. Storage is limited to three keys.**
 
 ```bash
 grep -rn "localStorage\|sessionStorage\|indexedDB\|document.cookie" src/
@@ -104,6 +104,10 @@ grep -rn "pushState\|replaceState\|location.hash" src/
 - `sessionStorage` in [`src/App.tsx`](src/App.tsx) holds the token, and only if you tick
   "Remember in this tab only". It is gone when the tab closes.
 - `localStorage` in [`src/i18n/`](src/i18n/) holds the language choice — `ko` or `en`, nothing else.
+- `localStorage` in [`src/lib/history.ts`](src/lib/history.ts) holds the history the picker shows beside each
+  conversation: per workspace and user, a conversation's ID, when it was last scanned and how many of your
+  messages that found, and when messages were last deleted from it and how many in total. No names and no
+  message text. **Clear history** in the picker removes it.
 - The remaining hits are the checkbox label in the translation files.
 
 - The URL is the fourth surface, and it is deliberately thin: the hash carries the current step and the

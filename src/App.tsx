@@ -23,6 +23,15 @@ import { LANGS, useI18n } from './i18n/context'
 import { keyOf, resultKey } from './lib/format'
 import { canonicalKinds, formatRoute, parseRoute, resolveStep, STEP_IDS, type Step } from './lib/route'
 import { readHash, subscribeHash, writeHash } from './lib/router'
+import {
+  accountKey,
+  clearHistory,
+  loadHistory,
+  recordDeletions,
+  recordScan,
+  saveHistory,
+  type HistoryMap,
+} from './lib/history'
 
 const TOKEN_KEY = 'slack-message-manager:token'
 
@@ -81,6 +90,7 @@ export default function App() {
   const [results, setResults] = useState<DeleteResult[]>([])
   const [running, setRunning] = useState(false)
   const [aborted, setAborted] = useState<string | null>(null)
+  const [history, setHistory] = useState<HistoryMap>({})
 
   const [rateLimitUntil, setRateLimitUntil] = useState(0)
   const [nowTick, setNowTick] = useState(Date.now())
@@ -88,6 +98,35 @@ export default function App() {
   const scanAbortRef = useRef<AbortController | null>(null)
   const deleteAbortRef = useRef<AbortController | null>(null)
   const autoConnectedRef = useRef(false)
+  /** The signed-in account's history key, and the history as last written. */
+  const accountRef = useRef<string | null>(null)
+  const historyRef = useRef<HistoryMap>({})
+
+  const updateHistory = useCallback((change: (map: HistoryMap) => HistoryMap) => {
+    const account = accountRef.current
+    if (!account) return
+    const next = change(historyRef.current)
+    historyRef.current = next
+    saveHistory(account, next)
+    setHistory(next)
+  }, [])
+
+  const clearHistoryNow = useCallback(() => {
+    const account = accountRef.current
+    if (!account) return
+    clearHistory(account)
+    historyRef.current = {}
+    setHistory({})
+  }, [])
+
+  // Each account in this browser keeps its own history; load it on sign-in.
+  useEffect(() => {
+    const account = identity ? accountKey(identity) : null
+    accountRef.current = account
+    const loaded = account ? loadHistory(account) : {}
+    historyRef.current = loaded
+    setHistory(loaded)
+  }, [identity])
 
   // pushState/replaceState fire neither hashchange nor popstate, so the router
   // module announces its own writes and this stays the single source of truth.
@@ -421,6 +460,12 @@ export default function App() {
       // Freeze the names as scanned; the picker list may change under us later.
       setScanLabels(new Map(labels))
       setScanCompleted(true)
+      // Remember, per conversation, that it was scanned and how much of it was yours.
+      const failed = new Set(report.errors.map((error) => error.channelId))
+      const found: Record<string, number> = {}
+      for (const item of chosen) if (!failed.has(item.id)) found[item.id] = 0
+      for (const target of report.targets) if (target.channelId in found) found[target.channelId]++
+      updateHistory((map) => recordScan(map, found, scanFrom, Date.now()))
       goto({ step: 'review' })
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
@@ -431,7 +476,7 @@ export default function App() {
     } finally {
       setScanning(false)
     }
-  }, [decorated, selected, scanFrom, identity, makeCtx, labels, goto])
+  }, [decorated, selected, scanFrom, identity, makeCtx, labels, goto, updateHistory])
 
   useEffect(() => {
     if (step !== 'scan' && scanning) {
@@ -487,6 +532,8 @@ export default function App() {
       setAborted(null)
 
       const reported = new Set<string>()
+      /** Messages this run actually deleted, per conversation — dry runs record nothing. */
+      const deletedHere: Record<string, number> = {}
       try {
         await runDeletion(
           queue,
@@ -495,6 +542,9 @@ export default function App() {
             files,
             onResult: (result) => {
               reported.add(rowKey(result))
+              if (!dryRun && result.kind === 'message' && result.outcome === 'deleted') {
+                deletedHere[result.channelId] = (deletedHere[result.channelId] ?? 0) + 1
+              }
               setResults((prev) => [...prev, result])
             },
           },
@@ -511,10 +561,14 @@ export default function App() {
         // tally and the export still account for it.
         const unreported = pending.filter((row) => !reported.has(rowKey(row)))
         if (unreported.length > 0) setResults((prev) => [...prev, ...unreported])
+        // Recorded even when the run stopped early: whatever went, went.
+        if (Object.keys(deletedHere).length > 0) {
+          updateHistory((map) => recordDeletions(map, deletedHere, Date.now()))
+        }
         setRunning(false)
       }
     },
-    [dryRun, makeCtx, goto],
+    [dryRun, makeCtx, goto, updateHistory],
   )
 
   const retryFailed = useCallback(() => {
@@ -634,6 +688,8 @@ export default function App() {
           onSelectedChange={setSelected}
           onScanFromChange={setScanFrom}
           onScan={() => void startScan()}
+          history={history}
+          onClearHistory={clearHistoryNow}
         />
       )}
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useI18n } from '../i18n/context'
 import { CONVERSATION_TYPES } from '../lib/api'
+import type { HistoryMap } from '../lib/history'
 import type { Conversation, ConversationKind } from '../lib/types'
 
 interface Props {
@@ -14,6 +15,9 @@ interface Props {
   onSelectedChange: (selected: Set<string>) => void
   onScanFromChange: (value: string) => void
   onScan: () => void
+  /** What this browser remembers about each conversation: scans and deletions. */
+  history: HistoryMap
+  onClearHistory: () => void
 }
 
 export function ConversationPicker({
@@ -27,8 +31,10 @@ export function ConversationPicker({
   onSelectedChange,
   onScanFromChange,
   onScan,
+  history,
+  onClearHistory,
 }: Props) {
-  const { t, n } = useI18n()
+  const { t, n, formatRelative, formatTime } = useI18n()
   const [query, setQuery] = useState('')
 
   const visible = useMemo(() => {
@@ -56,6 +62,7 @@ export function ConversationPicker({
   }
 
   const allVisibleOn = visible.length > 0 && visible.every((item) => selected.has(item.id))
+  const hasHistory = Object.keys(history).length > 0
 
   return (
     <>
@@ -133,22 +140,50 @@ export function ConversationPicker({
           >
             {allVisibleOn ? t.picker.deselectVisible : t.picker.selectVisible}
           </button>
+          {hasHistory && (
+            <button type="button" className="btn ghost sm" title={t.picker.clearHistoryTip} onClick={onClearHistory}>
+              {t.picker.clearHistory}
+            </button>
+          )}
         </div>
 
         <div className="list">
           {visible.length === 0 && (
             <div className="empty">{loading ? t.picker.emptyLoading : t.picker.emptyNone}</div>
           )}
-          {visible.map((item) => (
-            <label className="list-row" key={item.id} data-on={selected.has(item.id)}>
-              <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggle(item.id)} />
-              <span className="name">
-                {item.labelResolved ? item.label : <span style={{ color: 'var(--text-faint)' }}>{item.label}</span>}
-                <span className="sub">{item.id}</span>
-              </span>
-              <span className="meta">{t.kind.short[item.kind]}</span>
-            </label>
-          ))}
+          {visible.map((item) => {
+            const record = history[item.id]
+            return (
+              <label
+                className="list-row"
+                key={item.id}
+                data-on={selected.has(item.id)}
+                data-cleaned={record?.deletedAt ? true : undefined}
+              >
+                <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggle(item.id)} />
+                <span className="name">
+                  {item.labelResolved ? item.label : <span style={{ color: 'var(--text-faint)' }}>{item.label}</span>}
+                  <span className="sub">{item.id}</span>
+                </span>
+                {record && (
+                  <span className="history">
+                    {record.scannedAt !== undefined && (
+                      <span title={formatTime(record.scannedAt)}>
+                        {t.picker.historyScanned(formatRelative(record.scannedAt), n(record.found ?? 0))}
+                        {record.since ? t.picker.historySince(record.since) : ''}
+                      </span>
+                    )}
+                    {record.deletedAt !== undefined && (
+                      <span className="deleted" title={formatTime(record.deletedAt)}>
+                        {t.picker.historyDeleted(formatRelative(record.deletedAt), n(record.deleted ?? 0))}
+                      </span>
+                    )}
+                  </span>
+                )}
+                <span className="meta">{t.kind.short[item.kind]}</span>
+              </label>
+            )
+          })}
         </div>
       </section>
 

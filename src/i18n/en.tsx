@@ -205,6 +205,12 @@ settings:
         are skipped with {code} — the rest proceed normally.
       </>
     ),
+    historyScanned: (date: string, count: string) => `Scanned ${date} · ${count}`,
+    historySince: (since: string) => ` (since ${since})`,
+    historyDeleted: (date: string, count: string) => `Deleted ${date} · ${count} total`,
+    clearHistory: 'Clear history',
+    clearHistoryTip:
+      'Clears the per-conversation scan and deletion history kept in this browser (conversation IDs, dates and counts). Message text and names are never stored.',
     searchPlaceholder: 'Search by name or ID',
     selectVisible: 'Select all visible',
     deselectVisible: 'Deselect visible',

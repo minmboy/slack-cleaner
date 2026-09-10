@@ -210,6 +210,12 @@ settings:
         진행됩니다.
       </>
     ),
+    historyScanned: (date: string, count: string) => `스캔 ${date} · ${count}개`,
+    historySince: (since: string) => ` (${since}~)`,
+    historyDeleted: (date: string, count: string) => `삭제 ${date} · 누적 ${count}개`,
+    clearHistory: '이력 지우기',
+    clearHistoryTip:
+      '이 브라우저에 저장된 대화별 스캔·삭제 이력(대화 ID, 날짜, 개수)을 지웁니다. 메시지 본문과 이름은 처음부터 저장하지 않습니다.',
     searchPlaceholder: '이름 또는 ID 검색',
     selectVisible: '보이는 항목 전체 선택',
     deselectVisible: '보이는 항목 해제',
