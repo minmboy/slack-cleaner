@@ -531,6 +531,14 @@ export default function App() {
     if (queue.length + files.length > 0) void startDelete(queue, files, keepPrior, failed)
   }, [results, targets, stagedFiles, startDelete])
 
+  /**
+   * Leaving the run screen keeps its results. They stay in memory until a new
+   * scan replaces them and the picker links back to them, so an audit log not
+   * yet exported is not thrown away. (Forward alone cannot be relied on: any
+   * new navigation from the picker clears the forward history.)
+   */
+  const leaveRun = useCallback(() => goto({ step: 'select' }), [goto])
+
   const remaining = useMemo(() => {
     const doneKeys = new Set(results.filter((result) => result.kind === 'message').map(resultKey))
     return staged.filter((target) => !doneKeys.has(keyOf(target)))
@@ -543,7 +551,18 @@ export default function App() {
   return (
     <div className="app">
       <header className="masthead">
-        <h1>{t.app.title}</h1>
+        <h1>
+          {/* The way home from any screen: the picker, once connected. */}
+          <button
+            type="button"
+            className="home-link"
+            title={identity ? t.app.backToSelect : undefined}
+            disabled={!identity || running}
+            onClick={() => goto({ step: 'select' })}
+          >
+            {t.app.title}
+          </button>
+        </h1>
         <span className="tag" title={t.app.badgeTip}>
           <svg viewBox="0 0 12 12" aria-hidden="true">
             <rect x="2.25" y="5.25" width="7.5" height="5.25" rx="1.1" />
@@ -593,6 +612,14 @@ export default function App() {
 
       {step === 'select' && routeNotice === 'kinds' && <p className="note warn">{t.app.kindsClamped}</p>}
       {step === 'select' && scanFatal && <p className="note danger">{t.app.scanFailed(scanFatal)}</p>}
+      {step === 'select' && runStarted && results.length > 0 && (
+        <div className="note row">
+          <span style={{ flex: 1 }}>{t.app.lastRunNote}</span>
+          <button className="btn ghost sm" onClick={() => goto({ step: 'run' })}>
+            {t.app.lastRunView}
+          </button>
+        </div>
+      )}
       {step === 'select' && listError && <p className="note danger">{listError}</p>}
 
       {step === 'select' && (
@@ -676,16 +703,7 @@ export default function App() {
           remaining={remaining}
           onStop={() => deleteAbortRef.current?.abort()}
           onRetryFailed={retryFailed}
-          onFinish={() => {
-            setResults([])
-            setTargets([])
-            setExcluded(new Set())
-            setScanCompleted(false)
-            setRunStarted(false)
-            setRunDestructive(false)
-            setDeleteFiles(false)
-            goto({ step: 'select' })
-          }}
+          onFinish={leaveRun}
         />
       )}
 

@@ -47,6 +47,8 @@ export const en: Strings = {
       'Scan results live in memory only, so that screen cannot be restored from a link or a reload. Pick conversations again.',
     kindsClamped: 'Some conversation types in that link were not recognised, so they were reset to the default.',
     scanFailed: (code: string) => `The scan failed partway through (${code}). Pick conversations and try again.`,
+    lastRunNote: "This session's run results are still here — view or export them until your next scan.",
+    lastRunView: 'View results',
     noneFound: 'No messages of yours were found in the conversations you picked.',
     backToSelect: 'Pick conversations again',
   },
@@ -331,7 +333,7 @@ settings:
       </>
     ),
     retryFailed: (count: string) => `Retry ${count} failed`,
-    restart: 'Start over',
+    leaveHint: 'Export the results before you leave — a new scan replaces them.',
     kindMessage: 'Message',
     kindFile: 'File',
     thKind: 'Kind',

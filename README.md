@@ -228,8 +228,11 @@ GitHub Pages subpath with no rewrite rules, so `/review` would 404 on refresh.
 Because scan results are memory-only, some routes cannot be restored. Opening `#/review` cold does not show
 an empty list implying there is nothing to delete — it drops you back to the picker and says why. A delete
 run pins the route while it is in flight; navigating away cannot orphan it. Once a real run has started,
-Back cannot reopen its review list: those messages are gone, and confirming the same list again would
-overwrite the record of the run. A dry run deletes nothing, so after one, Back returns to the list.
+Back does not reopen its review list — those messages are gone, and confirming the same list again would
+overwrite the record of the run — so it leads out to the conversation picker instead. A dry run deletes
+nothing, so after one, Back returns to the list. From any screen, the title in the top-left corner leads
+back to the picker. Leaving the run screen keeps its results until a new scan replaces them, and the picker
+links back to them in the meantime.
 
 ## Layout
 

@@ -97,15 +97,17 @@ export function resolveStep(asked: Step, facts: RouteFacts): { step: Step; reaso
   if (facts.running) return ok('run')
   if (asked === 'connect' || asked === 'select') return ok('select')
 
-  // Asking for an earlier screen of a flow that has moved on lands on the
-  // furthest screen that still tells the truth, never on a stale one.
+  // Asking for an earlier screen of a flow that has moved on never lands on a
+  // stale one. After a real run, the scan and its review list describe messages
+  // that are gone, so Back leads out to the picker, where a new flow starts —
+  // pinning it to the run screen instead read as a dead end.
   if (asked === 'scan') {
     if (facts.scanning) return ok('scan')
-    if (facts.runDestructive) return ok('run')
+    if (facts.runDestructive) return ok('select')
     return facts.scanCompleted ? ok('review') : lost()
   }
   if (asked === 'review') {
-    if (facts.runDestructive) return ok('run')
+    if (facts.runDestructive) return ok('select')
     return facts.scanCompleted ? ok('review') : lost()
   }
   return facts.runStarted || facts.runDestructive ? ok('run') : lost()

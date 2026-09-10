@@ -692,3 +692,27 @@ kbd, code.inline {
   color: var(--text-dim);
   flex: none;
 }
+
+/* The app title doubles as the way home. */
+.home-link {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.home-link:hover:not(:disabled) {
+  color: var(--accent);
+}
+.home-link:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+.home-link:disabled {
+  color: inherit;
+  cursor: default;
+}

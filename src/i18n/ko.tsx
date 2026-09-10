@@ -53,6 +53,8 @@ export const ko = {
       '스캔 결과는 메모리에만 있어서 링크나 새로고침으로 그 화면을 복원할 수 없습니다. 대화를 다시 선택해 주세요.',
     kindsClamped: '링크의 대화 종류 일부를 인식하지 못해 기본값으로 되돌렸습니다.',
     scanFailed: (code: string) => `스캔이 중간에 실패했습니다 (${code}). 대화를 다시 선택해 주세요.`,
+    lastRunNote: '이번 세션의 삭제 결과가 남아 있습니다. 새로 스캔하기 전까지 다시 보거나 내보낼 수 있습니다.',
+    lastRunView: '결과 보기',
     noneFound: '선택한 대화에서 내가 쓴 메시지를 찾지 못했습니다.',
     backToSelect: '대화 다시 선택',
   },
@@ -330,7 +332,7 @@ settings:
       </>
     ),
     retryFailed: (count: string) => `실패한 ${count}개 재시도`,
-    restart: '처음으로',
+    leaveHint: '떠나기 전에 결과를 내보내 두세요. 새로 스캔하면 이 결과는 사라집니다.',
     kindMessage: '메시지',
     kindFile: '파일',
     thKind: '종류',
