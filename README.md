@@ -1,8 +1,14 @@
 # Slack Message Cleanup
 
+[![Deploy](https://github.com/minmboy/slack-cleaner/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/minmboy/slack-cleaner/actions/workflows/deploy-pages.yml)
+
 Manage your own Slack history: review what you have posted, then delete the messages — and optionally the
 files you attached — that you want gone. **There is no backend.** It builds to static files and talks to
 Slack directly from your browser.
+
+### → [minmboy.github.io/slack-cleaner](https://minmboy.github.io/slack-cleaner/)
+
+Or run it yourself, which is the stronger option for a tool you hand a token to:
 
 ```bash
 npm install
@@ -11,6 +17,9 @@ npm run build    # dist/ deploys to any static host
 ```
 
 Available in English and Korean — switcher in the top right.
+
+Before pasting a token into any copy of this tool — the hosted one included — read
+[Verifying this tool yourself](#verifying-this-tool-yourself). It takes about a minute.
 
 ---
 
@@ -112,8 +121,11 @@ Because `connect-src` lists only `slack.com`, **a tampered build still could not
 anywhere else.** The browser refuses the connection. Check a live deployment either way:
 
 ```bash
-curl -s <deployed URL> | grep -i content-security-policy      # the meta tag
-curl -sD - -o /dev/null <deployed URL> | grep -i content-security-policy   # the header, if set
+# the meta tag, which every host preserves
+curl -s https://minmboy.github.io/slack-cleaner/ | grep -o 'http-equiv="Content-Security-Policy"[^>]*'
+
+# the response header, on hosts that can set one (GitHub Pages cannot, so this is empty there)
+curl -sD - -o /dev/null https://minmboy.github.io/slack-cleaner/ | grep -i content-security-policy
 ```
 
 **5. You can watch it at runtime.** Keep the DevTools Network tab open and confirm that nothing but
@@ -163,14 +175,16 @@ Build command:  npm run build
 Build output:   dist
 ```
 
-**GitHub Pages** — supported by [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml).
-Enable it once under Settings → Pages → Source → "GitHub Actions"; the workflow is inert until then. It
-sets `BASE_PATH` for you, because a project site is served from `/<repo>/` rather than the domain root.
+**GitHub Pages** — where this repository publishes, via
+[`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml). Every push to `main` lints,
+builds and deploys. In a fork, enable it once under Settings → Pages → Source → "GitHub Actions"; the
+workflow is inert until then. It sets `BASE_PATH` from the repository name, because a project site is
+served from `/<repo>/` rather than the domain root.
 
 GitHub Pages cannot set response headers, so the CSP arrives only via the meta tag. That still enforces
-`connect-src`, which is the directive that matters here — verified by loading a build from a server that
-sends no headers at all and confirming that a request to any host other than `slack.com` is refused.
-What you give up is `frame-ancestors`, which is ignored inside a meta tag, plus the extra headers
+`connect-src`, which is the directive that matters here — confirmed against the live deployment: a
+request to `slack.com` succeeds and a request to any other host is refused. What you give up is
+`frame-ancestors`, which is ignored inside a meta tag, plus the supplementary headers
 (`Referrer-Policy`, `X-Content-Type-Options`, and so on).
 
 **Vercel** — move the directives from `vite.config.ts` into `vercel.json` to get them as headers too.
@@ -188,6 +202,7 @@ src/lib/scan.ts     Walks history + replies, collects your own messages
 src/lib/deleter.ts  Delete queue (replies before roots, newest first), per-failure classification
 src/i18n/           Hand-rolled translations; ko.tsx defines the type every other language must match
 src/App.tsx         Step state machine
+vite.config.ts      The CSP, written once and emitted as both a meta tag and a _headers file
 ```
 
 ## License
