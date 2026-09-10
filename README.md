@@ -98,12 +98,18 @@ pinned to `https://slack.com/api/` at the top of the same file.
 
 ```bash
 grep -rn "localStorage\|sessionStorage\|indexedDB\|document.cookie" src/
+grep -rn "pushState\|replaceState\|location.hash" src/
 ```
 
 - `sessionStorage` in [`src/App.tsx`](src/App.tsx) holds the token, and only if you tick
   "Remember in this tab only". It is gone when the tab closes.
 - `localStorage` in [`src/i18n/`](src/i18n/) holds the language choice — `ko` or `en`, nothing else.
 - The remaining hits are the checkbox label in the translation files.
+
+- The URL is the fourth surface, and it is deliberately thin: the hash carries the current step and the
+  conversation *types* you ticked, nothing else. Never the token, never message text, never which
+  conversations you selected, never your review filters. A fragment is not sent to the server either, so
+  none of it reaches GitHub's request logs.
 
 No IndexedDB, no cookies. **Message contents are never persisted by the app** — scan results live in memory
 and disappear on reload. The one way text leaves the browser is an export you click, which writes a file to
@@ -209,6 +215,18 @@ For a one-time cleanup, not deploying at all and running `npm run dev` locally i
 
 ---
 
+## Navigation
+
+Each step is a route, so Back works and a link describes a view:
+`#/select?kinds=im,mpim`, `#/review`, `#/run`.
+
+Hash routing rather than the History API, for the same reason the CSP is a meta tag: this is served from a
+GitHub Pages subpath with no rewrite rules, so `/review` would 404 on refresh.
+
+Because scan results are memory-only, some routes cannot be restored. Opening `#/review` cold does not show
+an empty list implying there is nothing to delete — it drops you back to the picker and says why. A delete
+run pins the route while it is in flight; navigating away cannot orphan it.
+
 ## Layout
 
 ```
@@ -218,6 +236,8 @@ src/lib/scan.ts     Walks history + replies, collects your own messages
 src/lib/deleter.ts  Delete queue: messages (replies before roots, newest first), then files; per-failure classification
 src/lib/export.ts   CSV and JSON for the staged list and the run results; joins message text onto results
 src/components/MessageList.tsx  Windowed list — pinned row heights, prefix-sum offsets, binary-searched window
+src/lib/router.ts   Hash subscription and writes; announces its own pushState/replaceState
+src/lib/route.ts    Pure URL <-> view state, plus the clamp that refuses unrestorable routes
 src/i18n/           Hand-rolled translations; ko.tsx defines the type every other language must match
 src/App.tsx         Step state machine
 vite.config.ts      The CSP, written once and emitted as both a meta tag and a _headers file

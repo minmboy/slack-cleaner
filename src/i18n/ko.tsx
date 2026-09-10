@@ -50,6 +50,9 @@ export const ko = {
     userIsApp: ' (앱)',
     scanErrorLabel: '스캔',
     skippedNotice: (count: number, detail: string) => `${count}개 대화를 건너뛰었습니다: ${detail}`,
+    routeNotRestorable:
+      '스캔 결과는 메모리에만 있어서 링크나 새로고침으로 그 화면을 복원할 수 없습니다. 대화를 다시 선택해 주세요.',
+    kindsClamped: '링크의 대화 종류 일부를 인식하지 못해 기본값으로 되돌렸습니다.',
     noneFound: '선택한 대화에서 내가 쓴 메시지를 찾지 못했습니다.',
     backToSelect: '대화 다시 선택',
   },

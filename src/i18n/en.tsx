@@ -44,6 +44,9 @@ export const en: Strings = {
     scanErrorLabel: 'Scan',
     skippedNotice: (count: number, detail: string) =>
       `Skipped ${count} conversation${count === 1 ? '' : 's'}: ${detail}`,
+    routeNotRestorable:
+      'Scan results live in memory only, so that screen cannot be restored from a link or a reload. Pick conversations again.',
+    kindsClamped: 'Some conversation types in that link were not recognised, so they were reset to the default.',
     noneFound: 'No messages of yours were found in the conversations you picked.',
     backToSelect: 'Pick conversations again',
   },

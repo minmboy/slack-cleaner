@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { authRevoke, authTest, fetchUser, listConversations, streamUsers } from './lib/api'
 import { collectFiles, runDeletion, DeleteRunAborted } from './lib/deleter'
 import { scanConversations } from './lib/scan'
@@ -21,10 +21,8 @@ import { ScanView } from './components/ScanView'
 import { TokenGate } from './components/TokenGate'
 import { LANGS, useI18n } from './i18n/context'
 import { keyOf, resultKey } from './lib/format'
-
-type Step = 'connect' | 'select' | 'scan' | 'review' | 'run'
-
-const STEP_IDS: Step[] = ['connect', 'select', 'scan', 'review', 'run']
+import { canonicalKinds, formatRoute, parseRoute, resolveStep, STEP_IDS, type Step } from './lib/route'
+import { readHash, subscribeHash, writeHash } from './lib/router'
 
 const TOKEN_KEY = 'slack-cleaner:token'
 
@@ -36,13 +34,11 @@ function prettyMpim(name: string): string {
 
 export default function App() {
   const { t, n, lang, setLang } = useI18n()
-  const [step, setStep] = useState<Step>('connect')
   const [token, setToken] = useState('')
   const [identity, setIdentity] = useState<Identity | null>(null)
   const [connectBusy, setConnectBusy] = useState(false)
   const [connectError, setConnectError] = useState<string | null>(null)
 
-  const [kinds, setKinds] = useState<ConversationKind[]>(['im'])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationsLoading, setConversationsLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
@@ -54,6 +50,15 @@ export default function App() {
   const [scanErrors, setScanErrors] = useState<{ channelId: string; channelLabel: string; code: string }[]>([])
   const [throttleSuspected, setThrottleSuspected] = useState(false)
 
+  const [scanning, setScanning] = useState(false)
+  const [scanCompleted, setScanCompleted] = useState(false)
+  const [runStarted, setRunStarted] = useState(false)
+  /**
+   * Conversation labels frozen when the scan finished. The picker's list can be
+   * refetched behind the user's back (a chip change, a Back/Forward), and the
+   * review and confirm screens must keep naming the conversations they scanned.
+   */
+  const [scanLabels, setScanLabels] = useState<Map<string, string>>(new Map())
   const [targets, setTargets] = useState<TargetMessage[]>([])
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
 
@@ -68,8 +73,47 @@ export default function App() {
   const [rateLimitUntil, setRateLimitUntil] = useState(0)
   const [nowTick, setNowTick] = useState(Date.now())
 
-  const abortRef = useRef<AbortController | null>(null)
+  const scanAbortRef = useRef<AbortController | null>(null)
+  const deleteAbortRef = useRef<AbortController | null>(null)
   const autoConnectedRef = useRef(false)
+
+  // pushState/replaceState fire neither hashchange nor popstate, so the router
+  // module announces its own writes and this stays the single source of truth.
+  const hash = useSyncExternalStore(subscribeHash, readHash, () => '')
+  const { route: asked, kindsClamped } = useMemo(() => parseRoute(hash), [hash])
+  const kinds = asked.kinds
+
+  const { step, reason: stepReason } = useMemo(
+    () =>
+      resolveStep(asked.step, {
+        identity: Boolean(identity),
+        running,
+        scanning,
+        scanCompleted,
+        runStarted,
+      }),
+    [asked.step, identity, running, scanning, scanCompleted, runStarted],
+  )
+
+  /** Navigate. `replace` for filter-ish changes, `push` for real destinations. */
+  const goto = useCallback(
+    (next: Partial<{ step: Step; kinds: ConversationKind[] }>, mode: 'push' | 'replace' = 'push') => {
+      writeHash(formatRoute({ step: next.step ?? step, kinds: next.kinds ?? kinds }), mode)
+    },
+    [step, kinds],
+  )
+
+  const setKinds = useCallback(
+    (next: ConversationKind[]) => goto({ kinds: canonicalKinds(next.join(',')).kinds }, 'replace'),
+    [goto],
+  )
+
+  // Write back whatever the clamp changed, so the address bar never shows a
+  // route the app is not on.
+  useEffect(() => {
+    const canonical = formatRoute({ step, kinds })
+    if (`/${hash.replace(/^\//, '')}` !== canonical) writeHash(canonical, 'replace')
+  }, [step, kinds, hash])
 
   const rateLimitRemaining = Math.max(0, Math.ceil((rateLimitUntil - nowTick) / 1000))
 
@@ -113,7 +157,7 @@ export default function App() {
       const who = await authTest({ token: candidate, signal: controller.signal, onRateLimit })
       setToken(candidate)
       setIdentity(who)
-      setStep('select')
+      goto({ step: 'select' }, 'replace')
       if (remember) sessionStorage.setItem(TOKEN_KEY, candidate)
     } catch (error) {
       if (error instanceof SlackApiError) {
@@ -131,7 +175,7 @@ export default function App() {
     } finally {
       setConnectBusy(false)
     }
-  }, [onRateLimit, t])
+  }, [onRateLimit, t, goto])
 
   // Reconnect automatically if the token was kept for this tab.
   useEffect(() => {
@@ -143,7 +187,8 @@ export default function App() {
   }, [])
 
   async function disconnect(revoke: boolean) {
-    abortRef.current?.abort()
+    scanAbortRef.current?.abort()
+    deleteAbortRef.current?.abort()
     if (revoke && token) {
       try {
         await authRevoke(makeCtx())
@@ -163,7 +208,11 @@ export default function App() {
     setProgress([])
     setScanErrors([])
     setAborted(null)
-    setStep('connect')
+    setScanning(false)
+    setScanCompleted(false)
+    setRunStarted(false)
+    setScanLabels(new Map())
+    writeHash(formatRoute({ step: 'connect', kinds: ['im'] }), 'replace')
   }
 
   // ---------- conversations + names ----------
@@ -271,6 +320,24 @@ export default function App() {
     return map
   }, [decorated])
 
+  /** A directory walk usually outlives the scan; let late names update the frozen map. */
+  useEffect(() => {
+    if (scanLabels.size === 0) return
+    setScanLabels((prev) => {
+      let changed = false
+      const next = new Map(prev)
+      for (const [id, label] of labels) {
+        if (prev.has(id) && prev.get(id) !== label && label !== id) {
+          next.set(id, label)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [labels])
+
+
   // ---------- scan ----------
 
   const startScan = useCallback(async () => {
@@ -278,8 +345,10 @@ export default function App() {
     if (chosen.length === 0) return
 
     const controller = new AbortController()
-    abortRef.current = controller
-    setStep('scan')
+    scanAbortRef.current = controller
+    setScanning(true)
+    setScanCompleted(false)
+    goto({ step: 'scan' })
     setProgress(chosen.map((item) => ({
       channelId: item.id,
       channelLabel: item.label,
@@ -310,7 +379,10 @@ export default function App() {
       setTargets(report.targets)
       setScanErrors(report.errors)
       setExcluded(new Set())
-      setStep('review')
+      // Freeze the names as scanned; the picker list may change under us later.
+      setScanLabels(new Map(labels))
+      setScanCompleted(true)
+      goto({ step: 'review' })
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
       setScanErrors((prev) => [
@@ -321,8 +393,17 @@ export default function App() {
           code: error instanceof Error ? error.message : 'unknown_error',
         },
       ])
+    } finally {
+      setScanning(false)
     }
-  }, [decorated, selected, scanFrom, identity, makeCtx, t])
+  }, [decorated, selected, scanFrom, identity, makeCtx, t, labels, goto])
+
+  useEffect(() => {
+    if (step !== 'scan' && scanning) {
+      scanAbortRef.current?.abort()
+      setScanning(false)
+    }
+  }, [step, scanning])
 
   const scannedMine = useMemo(() => progress.reduce((sum, item) => sum + item.mine, 0), [progress])
 
@@ -342,9 +423,9 @@ export default function App() {
     const counts = new Map<string, number>()
     for (const target of staged) counts.set(target.channelId, (counts.get(target.channelId) ?? 0) + 1)
     return [...counts.entries()]
-      .map(([channelId, count]) => ({ channelId, label: labels.get(channelId) ?? channelId, count }))
+      .map(([channelId, count]) => ({ channelId, label: scanLabels.get(channelId) ?? channelId, count }))
       .sort((a, b) => b.count - a.count)
-  }, [staged, labels])
+  }, [staged, scanLabels])
 
   /**
    * `keepPrior` carries results forward across a retry. Deletion is irreversible,
@@ -354,9 +435,10 @@ export default function App() {
   const startDelete = useCallback(
     async (queue: TargetMessage[], files: TargetFile[], keepPrior: DeleteResult[] = []) => {
       const controller = new AbortController()
-      abortRef.current = controller
+      deleteAbortRef.current = controller
       setConfirmOpen(false)
-      setStep('run')
+      setRunStarted(true)
+      goto({ step: 'run' })
       setResults(keepPrior)
       setRunTotal(keepPrior.length + queue.length + files.length)
       setRunning(true)
@@ -381,7 +463,7 @@ export default function App() {
         setRunning(false)
       }
     },
-    [dryRun, makeCtx],
+    [dryRun, makeCtx, goto],
   )
 
   const retryFailed = useCallback(() => {
@@ -453,6 +535,10 @@ export default function App() {
 
       {step === 'connect' && <TokenGate onSubmit={(value, remember) => void connect(value, remember)} busy={connectBusy} error={connectError} />}
 
+      {step === 'select' && stepReason === 'not-restorable' && (
+        <p className="note warn">{t.app.routeNotRestorable}</p>
+      )}
+      {step === 'select' && kindsClamped && <p className="note warn">{t.app.kindsClamped}</p>}
       {step === 'select' && listError && <p className="note danger">{listError}</p>}
 
       {step === 'select' && (
@@ -478,8 +564,8 @@ export default function App() {
           rateLimitRemaining={rateLimitRemaining}
           throttleSuspected={throttleSuspected}
           onCancel={() => {
-            abortRef.current?.abort()
-            setStep('select')
+            scanAbortRef.current?.abort()
+            goto({ step: 'select' }, 'replace')
           }}
         />
       )}
@@ -499,7 +585,7 @@ export default function App() {
               <div className="empty">
                 {t.app.noneFound}
                 <div style={{ marginTop: 14 }}>
-                  <button className="btn ghost" onClick={() => setStep('select')}>
+                  <button className="btn ghost" onClick={() => goto({ step: 'select' })}>
                     {t.app.backToSelect}
                   </button>
                 </div>
@@ -508,10 +594,10 @@ export default function App() {
           ) : (
             <ReviewView
               targets={targets}
-              labels={labels}
+              labels={scanLabels}
               excluded={excluded}
               onExcludedChange={setExcluded}
-              onBack={() => setStep('select')}
+              onBack={() => goto({ step: 'select' })}
               onConfirm={() => setConfirmOpen(true)}
             />
           )}
@@ -526,16 +612,18 @@ export default function App() {
           dryRun={dryRun}
           aborted={aborted}
           rateLimitRemaining={rateLimitRemaining}
-          labels={labels}
+          labels={scanLabels}
           targets={targets}
           remaining={remaining}
-          onStop={() => abortRef.current?.abort()}
+          onStop={() => deleteAbortRef.current?.abort()}
           onRetryFailed={retryFailed}
           onFinish={() => {
             setResults([])
             setTargets([])
             setExcluded(new Set())
-            setStep('select')
+            setScanCompleted(false)
+            setRunStarted(false)
+            goto({ step: 'select' })
           }}
         />
       )}
